@@ -9,11 +9,14 @@ module Pilya.Lex
     , parse
     ) where
 
-import           Control.Monad (foldM)
-import           Data.Char     (isDigit, isLetter)
-import           Data.Maybe    (fromJust, fromMaybe, isJust, isNothing)
-import           Data.Text     (Text)
-import qualified Data.Text     as T
+import           Control.Applicative ((<$>))
+import           Control.Monad       (foldM)
+import           Data.Char           (isDigit, isLetter)
+import           Data.List           (elemIndex)
+import           Data.Maybe          (fromJust, fromMaybe, isJust, isNothing)
+import           Data.Text           (Text)
+import qualified Data.Text           as T
+import           Numeric             (readDec, readHex, readOct)
 
 data TokenType
     = TokNewline -- \n
@@ -129,6 +132,8 @@ charType ch
     | ch `elem` ":<>=+-*/()%!$[],{}" = CharSpecial
     | otherwise = CharOther
 
+data Sign = SignPos | SignNeg
+
 data ParserState
     -- no token is being read
     = StateFree
@@ -137,12 +142,53 @@ data ParserState
     -- reading an identier or a keyword;
     -- contains a buffer and token's start position
     | StateAlpha String Int
-    -- reading a number;
+    -- reading a binary, octal, decimal or hex. number;
     -- contains a buffer and token's start position
-    | StateNumber String Int
+    | StateInt String Int
+    -- expecting sign of an exponent or continuation of a hex. number;
+    -- contains a buffer and token's start position
+    | StateHexOrExp String Int
+    -- reading fractional part of a real number;
+    -- contains whole part, buffer and token's start position
+    | StateFrac Int String Int
+    -- expecting a sign of an exponent;
+    -- container mantissa and token's start position
+    | StateExpSign Double Int
+    -- reading value of an exponent;
+    -- contains mantissa, exponent's sign and token's start position
+    | StateExpVal Double Sign String Int
     -- reading an operator;
     -- contains a buffer and token's start position
     | StateOperator String Int
+
+-- |Reads a number from string with given base.
+readBase :: Int -> Int -> String -> Maybe Int
+readBase acc _ "" = Just acc
+readBase acc base (c:cs)
+    | isNothing charDigit = Nothing
+    | fromJust charDigit >= base = Nothing
+    | otherwise = readBase (acc * base + fromJust charDigit) base cs
+    where
+        digit char
+            | isDigit char = elemIndex char "0123456789"
+            | char `elem` "abcdef" = (+ 10) <$> elemIndex char "abcdef"
+            | char `elem` "ABCDEF" = (+ 10) <$> elemIndex char "ABCDEF"
+            | otherwise = Nothing
+        charDigit = digit c
+
+-- |Parses an integer in language's syntax from __reversed__ string.
+parseInt :: String -> Maybe Int
+parseInt str
+    | head str == 'b' || head str == 'B' =
+        readBase 0 2 (reverse $ tail str)
+    | head str == 'o' || head str == 'O' =
+        readBase 0 8 (reverse $ tail str)
+    | head str == 'd' || head str == 'D' =
+        readBase 0 10 (reverse $ tail str)
+    | head str == 'h' || head str == 'H' =
+        readBase 0 16 (reverse $ tail str)
+    | otherwise =
+        readBase 0 10 (reverse str)
 
 data Parser = Parser
     { parserState      :: ParserState
@@ -174,6 +220,8 @@ advance (Parser StateFree line pos tokens) char
         Right $ Parser StateFree (line+1) 1 (Token TokNewline line pos : tokens)
     | ct == Just CharLetter =
         Right $ Parser (StateAlpha [fromJust char] pos) line (pos+1) tokens
+    | ct == Just CharDigit =
+        Right $ Parser (StateInt [fromJust char] pos) line (pos+1) tokens
     | ct == Just CharSpecial =
         Right $ Parser (StateOperator [fromJust char] pos) line (pos+1) tokens
     | isNothing char =
@@ -200,6 +248,17 @@ advance (Parser (StateAlpha buf tokpos) line pos tokens) char
         ct = fmap charType char
         newBuf = buf ++ [fromJust char]
         tokType = fromMaybe (TokIdent buf) $ fromKeyword buf
+advance (Parser (StateInt buf tokpos) line pos tokens) char
+    | ct == Just CharDigit || ct == Just CharLetter =
+        Right $ Parser (StateInt newBuf tokpos) line (pos+1) tokens
+    | otherwise =
+        case parseInt buf of
+            Just num -> advance (Parser StateFree line pos (token num : tokens)) char
+            Nothing -> Left $ ParserError line tokpos "Integer has incorrent format"
+    where
+        ct = fmap charType char
+        newBuf = fromJust char : buf
+        token num = Token (TokInteger $ fromIntegral num) line tokpos
 advance (Parser (StateOperator buf tokpos) line pos tokens) char
     | ct == Just CharSpecial =
         Right $ Parser (StateOperator newBuf tokpos) line (pos+1) tokens
