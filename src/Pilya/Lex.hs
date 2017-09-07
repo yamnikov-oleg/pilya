@@ -11,7 +11,7 @@ module Pilya.Lex
 
 import           Control.Monad (foldM)
 import           Data.Char     (isDigit, isLetter)
-import           Data.Maybe    (fromJust, fromMaybe, isNothing)
+import           Data.Maybe    (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Text     (Text)
 import qualified Data.Text     as T
 
@@ -166,6 +166,8 @@ newParser = Parser StateFree 1 1 []
 -- to finish parsing.
 advance :: Parser -> Maybe Char -> Either ParserError Parser
 advance (Parser StateFree line pos tokens) char
+    | char == Just '{' =
+        Right $ Parser StateComment line (pos+1) tokens
     | ct == Just CharWhitespace =
         Right $ Parser StateFree line (pos+1) tokens
     | ct == Just CharNewline =
@@ -176,6 +178,17 @@ advance (Parser StateFree line pos tokens) char
         Right $ Parser (StateOperator [fromJust char] pos) line (pos+1) tokens
     | isNothing char =
         Right $ Parser StateFree line pos tokens
+    where
+        ct = fmap charType char
+advance (Parser StateComment line pos tokens) char
+    | char == Just '}' =
+        Right $ Parser StateFree line (pos+1) tokens
+    | ct == Just CharNewline =
+        Right $ Parser StateComment (line+1) 1 tokens
+    | isJust char =
+        Right $ Parser StateComment line (pos+1) tokens
+    | isNothing char =
+        Left $ ParserError line pos "Unexpected end of file during comment parsing"
     where
         ct = fmap charType char
 advance (Parser (StateAlpha buf tokpos) line pos tokens) char
