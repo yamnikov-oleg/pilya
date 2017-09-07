@@ -172,6 +172,8 @@ advance (Parser StateFree line pos tokens) char
         Right $ Parser StateFree (line+1) 1 (Token TokNewline line pos : tokens)
     | ct == Just CharLetter =
         Right $ Parser (StateAlpha [fromJust char] pos) line (pos+1) tokens
+    | ct == Just CharSpecial =
+        Right $ Parser (StateOperator [fromJust char] pos) line (pos+1) tokens
     | isNothing char =
         Right $ Parser StateFree line pos tokens
     where
@@ -185,6 +187,17 @@ advance (Parser (StateAlpha buf tokpos) line pos tokens) char
         ct = fmap charType char
         newBuf = buf ++ [fromJust char]
         tokType = fromMaybe (TokIdent buf) $ fromKeyword buf
+advance (Parser (StateOperator buf tokpos) line pos tokens) char
+    | ct == Just CharSpecial =
+        Right $ Parser (StateOperator newBuf tokpos) line (pos+1) tokens
+    | otherwise =
+        case operResult of
+            Just operTok -> advance (Parser StateFree line pos (Token operTok line tokpos : tokens)) char
+            Nothing -> Left $ ParserError line tokpos ("Unknown operator " ++ buf)
+    where
+        ct = fmap charType char
+        newBuf = buf ++ [fromJust char]
+        operResult = fromOperator buf
 
 -- |Performs tokenization of a text and returns token list or an error.
 parse :: Text -> Either ParserError [Token]
