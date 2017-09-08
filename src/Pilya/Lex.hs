@@ -274,7 +274,8 @@ advance' (StateAlpha buf tokpos) line _ char
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
-        tokType = fromMaybe (TokIdent $ reverse buf) $ fromKeyword buf
+        rbuf = reverse buf
+        tokType = fromMaybe (TokIdent rbuf) $ fromKeyword rbuf
 advance' (StateInt buf tokpos) line _ char
     | ct == Just CharDigit || ct == Just CharLetter =
         AdvNoToken (StateInt newBuf tokpos)
@@ -354,7 +355,7 @@ advance' (StateOperator buf tokpos) line _ char
     | otherwise =
         case operResult of
             Just operTok -> AdvNotConsumedToken StateFree (Token operTok line tokpos)
-            Nothing -> AdvError $ ParserError line tokpos ("Unknown operator " ++ buf)
+            Nothing -> AdvError $ ParserError line tokpos ("Unknown operator " ++ reverse buf)
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
