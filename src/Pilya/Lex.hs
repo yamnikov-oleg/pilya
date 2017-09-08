@@ -264,8 +264,8 @@ advance' (StateAlpha buf tokpos) line _ char
         AdvNotConsumedToken StateFree (Token tokType line tokpos)
     where
         ct = fmap charType char
-        newBuf = buf ++ [fromJust char]
-        tokType = fromMaybe (TokIdent buf) $ fromKeyword buf
+        newBuf = fromJust char : buf
+        tokType = fromMaybe (TokIdent $ reverse buf) $ fromKeyword buf
 advance' (StateInt buf tokpos) line _ char
     | ct == Just CharDigit || ct == Just CharLetter =
         AdvNoToken (StateInt newBuf tokpos)
@@ -286,8 +286,8 @@ advance' (StateOperator buf tokpos) line _ char
             Nothing -> AdvError $ ParserError line tokpos ("Unknown operator " ++ buf)
     where
         ct = fmap charType char
-        newBuf = buf ++ [fromJust char]
-        operResult = fromOperator buf
+        newBuf = fromJust char : buf
+        operResult = fromOperator $ reverse buf
 
 -- |Performs tokenization of a text and returns token list or an error.
 parse :: Text -> Either ParserError [Token]
