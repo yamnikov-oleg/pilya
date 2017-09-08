@@ -16,6 +16,7 @@ import           Data.List           (elemIndex)
 import           Data.Maybe          (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Text           (Text)
 import qualified Data.Text           as T
+import           Text.Read           (readMaybe)
 
 data TokenType
     = TokNewline -- \n
@@ -128,7 +129,7 @@ charType ch
     | ch == '\n' = CharNewline
     | isDigit ch = CharDigit
     | isLetter ch = CharLetter
-    | ch `elem` ":<>=+-*/()%!$[],{}" = CharSpecial
+    | ch `elem` ":<>=+-*/()%!$[].,{}" = CharSpecial
     | otherwise = CharOther
 
 data Sign = SignPos | SignNeg
@@ -160,13 +161,16 @@ data ParserState
     -- contains a buffer and token's start position
     | StateOperator String Int
 
+readBase :: Int -> String -> Maybe Int
+readBase = readBase' 0
+
 -- |Reads a number from string with given base.
-readBase :: Int -> Int -> String -> Maybe Int
-readBase acc _ "" = Just acc
-readBase acc base (c:cs)
+readBase' :: Int -> Int -> String -> Maybe Int
+readBase' acc _ "" = Just acc
+readBase' acc base (c:cs)
     | isNothing charDigit = Nothing
     | fromJust charDigit >= base = Nothing
-    | otherwise = readBase (acc * base + fromJust charDigit) base cs
+    | otherwise = readBase' (acc * base + fromJust charDigit) base cs
     where
         digit char
             | isDigit char = elemIndex char "0123456789"
@@ -179,15 +183,15 @@ readBase acc base (c:cs)
 parseInt :: String -> Maybe Int
 parseInt str
     | head str == 'b' || head str == 'B' =
-        readBase 0 2 (reverse $ tail str)
+        readBase 2 (reverse $ tail str)
     | head str == 'o' || head str == 'O' =
-        readBase 0 8 (reverse $ tail str)
+        readBase 8 (reverse $ tail str)
     | head str == 'd' || head str == 'D' =
-        readBase 0 10 (reverse $ tail str)
+        readBase 10 (reverse $ tail str)
     | head str == 'h' || head str == 'H' =
-        readBase 0 16 (reverse $ tail str)
+        readBase 16 (reverse $ tail str)
     | otherwise =
-        readBase 0 10 (reverse str)
+        readBase 10 (reverse str)
 
 data Parser = Parser
     { parserState      :: ParserState
@@ -244,6 +248,8 @@ advance' StateFree line pos char
         AdvNoToken (StateAlpha [fromJust char] pos)
     | ct == Just CharDigit =
         AdvNoToken (StateInt [fromJust char] pos)
+    | char == Just '.' =
+        AdvNoToken (StateFrac 0 "" pos)
     | ct == Just CharSpecial =
         AdvNoToken (StateOperator [fromJust char] pos)
     | isNothing char =
@@ -269,6 +275,10 @@ advance' (StateAlpha buf tokpos) line _ char
 advance' (StateInt buf tokpos) line _ char
     | ct == Just CharDigit || ct == Just CharLetter =
         AdvNoToken (StateInt newBuf tokpos)
+    | char == Just '.' =
+        case readBase 10 $ reverse buf of
+            Just num -> AdvNoToken (StateFrac num "" tokpos)
+            Nothing  -> AdvError $ ParserError line tokpos "Real number has incorrect format"
     | otherwise =
         case parseInt buf of
             Just num -> AdvNotConsumedToken StateFree (token num)
@@ -277,6 +287,24 @@ advance' (StateInt buf tokpos) line _ char
         ct = fmap charType char
         newBuf = fromJust char : buf
         token num = Token (TokInteger $ fromIntegral num) line tokpos
+advance' (StateFrac whole buf tokpos) line _ char
+    | ct == Just CharDigit =
+        AdvNoToken (StateFrac whole newBuf tokpos)
+    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct =
+        case bufDouble of
+            Just double ->
+                AdvNotConsumedToken StateFree (Token (TokReal double) line tokpos)
+            Nothing ->
+                AdvError $ ParserError line tokpos "Real number has incorrect format"
+    | otherwise =
+        AdvError $ ParserError line tokpos "Real number has incorrect format"
+    where
+        ct = fmap charType char
+        newBuf = fromJust char : buf
+        bufDouble = do
+            bufNum <- readMaybe $ reverse buf
+            let bufDiv = 10 ^ length buf
+            return $ fromIntegral whole + (bufNum / bufDiv)
 advance' (StateOperator buf tokpos) line _ char
     | ct == Just CharSpecial =
         AdvNoToken (StateOperator newBuf tokpos)
