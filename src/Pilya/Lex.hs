@@ -16,7 +16,6 @@ import           Data.List           (elemIndex)
 import           Data.Maybe          (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Text           (Text)
 import qualified Data.Text           as T
-import           Numeric             (readDec, readHex, readOct)
 
 data TokenType
     = TokNewline -- \n
@@ -211,61 +210,80 @@ newParser = Parser StateFree 1 1 []
 -- If the end of file has been reached, feed this function with `Nothing`
 -- to finish parsing.
 advance :: Parser -> Maybe Char -> Either ParserError Parser
-advance (Parser StateFree line pos tokens) char
+advance (Parser state line pos tokens) char =
+    case advResult of
+        AdvError err ->
+            Left err
+        AdvNoToken newState ->
+            Right $ Parser newState newLine newPos tokens
+        AdvToken newState newTok ->
+            Right $ Parser newState newLine newPos (newTok:tokens)
+        AdvNotConsumedToken newState newTok ->
+            advance (Parser newState line pos (newTok:tokens)) char
+    where
+        advResult = advance' state line pos char
+        ct = fmap charType char
+        newLine = if ct == Just CharNewline then line+1 else line
+        newPos = if ct == Just CharNewline then 1 else pos+1
+
+data AdvanceResult
+    = AdvError ParserError
+    | AdvNoToken ParserState
+    | AdvToken ParserState Token
+    | AdvNotConsumedToken ParserState Token
+
+advance' :: ParserState -> Int -> Int -> Maybe Char -> AdvanceResult
+advance' StateFree line pos char
     | char == Just '{' =
-        Right $ Parser StateComment line (pos+1) tokens
+        AdvNoToken StateComment
     | ct == Just CharWhitespace =
-        Right $ Parser StateFree line (pos+1) tokens
+        AdvNoToken StateFree
     | ct == Just CharNewline =
-        Right $ Parser StateFree (line+1) 1 (Token TokNewline line pos : tokens)
+        AdvToken StateFree (Token TokNewline line pos)
     | ct == Just CharLetter =
-        Right $ Parser (StateAlpha [fromJust char] pos) line (pos+1) tokens
+        AdvNoToken (StateAlpha [fromJust char] pos)
     | ct == Just CharDigit =
-        Right $ Parser (StateInt [fromJust char] pos) line (pos+1) tokens
+        AdvNoToken (StateInt [fromJust char] pos)
     | ct == Just CharSpecial =
-        Right $ Parser (StateOperator [fromJust char] pos) line (pos+1) tokens
+        AdvNoToken (StateOperator [fromJust char] pos)
     | isNothing char =
-        Right $ Parser StateFree line pos tokens
+        AdvNoToken StateFree
     where
         ct = fmap charType char
-advance (Parser StateComment line pos tokens) char
+advance' StateComment line pos char
     | char == Just '}' =
-        Right $ Parser StateFree line (pos+1) tokens
-    | ct == Just CharNewline =
-        Right $ Parser StateComment (line+1) 1 tokens
+        AdvNoToken StateFree
     | isJust char =
-        Right $ Parser StateComment line (pos+1) tokens
+        AdvNoToken StateComment
     | isNothing char =
-        Left $ ParserError line pos "Unexpected end of file during comment parsing"
-    where
-        ct = fmap charType char
-advance (Parser (StateAlpha buf tokpos) line pos tokens) char
+        AdvError $ ParserError line pos "Unexpected end of file during comment parsing"
+advance' (StateAlpha buf tokpos) line _ char
     | ct == Just CharDigit || ct == Just CharLetter =
-        Right $ Parser (StateAlpha newBuf tokpos) line (pos+1) tokens
+        AdvNoToken (StateAlpha newBuf tokpos)
     | otherwise =
-        advance (Parser StateFree line pos (Token tokType line tokpos : tokens)) char
+        AdvNotConsumedToken StateFree (Token tokType line tokpos)
     where
         ct = fmap charType char
         newBuf = buf ++ [fromJust char]
         tokType = fromMaybe (TokIdent buf) $ fromKeyword buf
-advance (Parser (StateInt buf tokpos) line pos tokens) char
+advance' (StateInt buf tokpos) line _ char
     | ct == Just CharDigit || ct == Just CharLetter =
-        Right $ Parser (StateInt newBuf tokpos) line (pos+1) tokens
+        AdvNoToken (StateInt newBuf tokpos)
     | otherwise =
         case parseInt buf of
-            Just num -> advance (Parser StateFree line pos (token num : tokens)) char
-            Nothing -> Left $ ParserError line tokpos "Integer has incorrent format"
+            Just num -> AdvNotConsumedToken StateFree (token num)
+            Nothing  -> AdvError $ ParserError line tokpos "Integer has incorrent format"
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
         token num = Token (TokInteger $ fromIntegral num) line tokpos
-advance (Parser (StateOperator buf tokpos) line pos tokens) char
+advance' (StateOperator buf tokpos) line _ char
     | ct == Just CharSpecial =
-        Right $ Parser (StateOperator newBuf tokpos) line (pos+1) tokens
+        AdvNoToken (StateOperator newBuf tokpos)
     | otherwise =
         case operResult of
-            Just operTok -> advance (Parser StateFree line pos (Token operTok line tokpos : tokens)) char
-            Nothing -> Left $ ParserError line tokpos ("Unknown operator " ++ buf)
+            Just operTok -> AdvNotConsumedToken StateFree (Token operTok line tokpos)
+            Nothing -> AdvError $ ParserError line tokpos ("Unknown operator " ++ buf)
     where
         ct = fmap charType char
         newBuf = buf ++ [fromJust char]
