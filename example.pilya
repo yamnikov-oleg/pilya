@@ -1,0 +1,43 @@
+dim a % : dim b !
+dim c $
+[
+    a as 01010b
+    a as 012277o
+    a as 12
+    a as 12d
+    a as a4bh
+    a as a * 2 + 12
+
+    b as 0.12e-4
+    b as 12e3h
+    b as b / 2 - 3.14
+
+    c as true
+    c as false
+    c as a = b
+    c as b <> a
+    c as (a > b) or (a = b)
+]
+
+{ Comment }
+
+if a = b then a as a + 0.5
+
+if a <> b then [
+    a as a + 0.75
+    b as b + 0.4
+] else [
+    c as a > b
+]
+
+dim i % : for i as 0 to a do b as b / 2
+
+while i < a do [
+    i as i + 1
+    b as b + 1.0
+]
+
+read(a, b, c)
+write(a, b = 0.5, c)
+
+end
