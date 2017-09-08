@@ -222,6 +222,8 @@ advance (Parser state line pos tokens) char =
             Right $ Parser newState newLine newPos tokens
         AdvToken newState newTok ->
             Right $ Parser newState newLine newPos (newTok:tokens)
+        AdvNotConsumed newState ->
+            advance (Parser newState line pos tokens) char
         AdvNotConsumedToken newState newTok ->
             advance (Parser newState line pos (newTok:tokens)) char
     where
@@ -234,6 +236,7 @@ data AdvanceResult
     = AdvError ParserError
     | AdvNoToken ParserState
     | AdvToken ParserState Token
+    | AdvNotConsumed ParserState
     | AdvNotConsumedToken ParserState Token
 
 advance' :: ParserState -> Int -> Int -> Maybe Char -> AdvanceResult
@@ -290,6 +293,12 @@ advance' (StateInt buf tokpos) line _ char
 advance' (StateFrac whole buf tokpos) line _ char
     | ct == Just CharDigit =
         AdvNoToken (StateFrac whole newBuf tokpos)
+    | char == Just 'e' || char == Just 'E' =
+        case bufDouble of
+            Just double ->
+                AdvNoToken (StateExpSign double tokpos)
+            Nothing ->
+                AdvError $ ParserError line tokpos "Real number has incorrect format"
     | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct =
         case bufDouble of
             Just double ->
@@ -305,6 +314,40 @@ advance' (StateFrac whole buf tokpos) line _ char
             bufNum <- readMaybe $ reverse buf
             let bufDiv = 10 ^ length buf
             return $ fromIntegral whole + (bufNum / bufDiv)
+advance' (StateExpSign mant tokpos) line _ char
+    | char == Just '+' =
+        AdvNoToken (StateExpVal mant SignPos "" tokpos)
+    | char == Just '-' =
+        AdvNoToken (StateExpVal mant SignNeg "" tokpos)
+    | ct == Just CharDigit =
+        AdvNotConsumed (StateExpVal mant SignPos "" tokpos)
+    | otherwise =
+        AdvError $ ParserError line tokpos "Real number has incorrect format"
+    where
+        ct = fmap charType char
+advance' (StateExpVal mant sign buf tokpos) line _ char
+    | ct == Just CharDigit =
+        AdvNoToken (StateExpVal mant sign newBuf tokpos)
+    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct =
+        case bufDouble of
+            Just dbl ->
+                AdvToken StateFree (Token (TokReal dbl) line tokpos)
+            Nothing ->
+                AdvError $ ParserError line tokpos "Real number has incorrect format"
+    | otherwise =
+        AdvError $ ParserError line tokpos "Real number has incorrect format"
+    where
+        ct = fmap charType char
+        newBuf = fromJust char : buf
+        buildDouble :: Double -> Sign -> Int -> Double
+        buildDouble m s p =
+            case s of
+                SignPos -> m * 10 ^ p
+                SignNeg -> m * 0.1 ^ p
+        bufDouble = do
+            pow <- readMaybe $ reverse buf
+            let dbl = buildDouble mant sign pow
+            return dbl
 advance' (StateOperator buf tokpos) line _ char
     | ct == Just CharSpecial =
         AdvNoToken (StateOperator newBuf tokpos)
