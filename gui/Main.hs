@@ -36,7 +36,9 @@ buildUI = do
         , #bottomMargin := 12
         , #leftMargin := 12
         ]
-    #pack1 rootPaned sourceEdit True True
+    sourceScroll <- new Gtk.ScrolledWindow []
+    #add sourceScroll sourceEdit
+    #pack1 rootPaned sourceScroll True True
 
     modeTabs <- new Gtk.Notebook
         [ #widthRequest := 300
@@ -56,7 +58,9 @@ buildUI = do
         , #bottomMargin := 6
         , #leftMargin := 6
         ]
-    #packStart lexTabContainer lexOutput True True 0
+    lexOutputScroll <- new Gtk.ScrolledWindow []
+    #add lexOutputScroll lexOutput
+    #packStart lexTabContainer lexOutputScroll True True 0
     lexButton <- new Gtk.Button
         [ #label := "Split into tokens"
         ]
