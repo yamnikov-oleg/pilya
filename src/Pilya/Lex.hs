@@ -300,7 +300,7 @@ advance' (StateFrac whole buf tokpos) line _ char
                 AdvNoToken (StateExpSign double tokpos)
             Nothing ->
                 AdvError $ ParserError line tokpos "Real number has incorrect format"
-    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct =
+    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
         case bufDouble of
             Just double ->
                 AdvNotConsumedToken StateFree (Token (TokReal double) line tokpos)
@@ -329,7 +329,7 @@ advance' (StateExpSign mant tokpos) line _ char
 advance' (StateExpVal mant sign buf tokpos) line _ char
     | ct == Just CharDigit =
         AdvNoToken (StateExpVal mant sign newBuf tokpos)
-    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct =
+    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
         case bufDouble of
             Just dbl ->
                 AdvToken StateFree (Token (TokReal dbl) line tokpos)
