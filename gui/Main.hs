@@ -3,12 +3,10 @@
 
 import           Control.Monad       (when)
 import           Data.GI.Base        (AttrOp ((:=)), get, gtypeInt64,
-                                      gtypeString, new, on, set)
+                                      gtypeString, new, on)
 import           Data.GI.Base.GValue (IsGValue (fromGValue, toGValue))
 import           Data.Int            (Int64)
-import           Data.List           (intercalate)
 import           Data.Maybe          (fromJust)
-import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
 import qualified Pilya.Lex           as Lex
 
@@ -142,8 +140,7 @@ onLexButtonClicked appUI = do
 
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) -> do
-            let errText = "Error on " ++ show line ++ ":" ++ show pos ++ ":\n" ++ msg
-            addLexStoreRow appUI msg (fromIntegral line) (fromIntegral pos) 1
+            addLexStoreRow appUI msg line pos (1::Int64)
             return ()
         Right tokens -> do
             mapM_ (\(Lex.Token typ line pos len) ->
