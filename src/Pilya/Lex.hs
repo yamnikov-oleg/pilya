@@ -106,9 +106,10 @@ fromOperator op = case op of
     _    -> Nothing
 
 data Token = Token
-    { tokenType :: TokenType
-    , tokenLine :: Int
-    , tokenPos  :: Int
+    { tokenType   :: TokenType
+    , tokenLine   :: Int
+    , tokenPos    :: Int
+    , tokenLength :: Int
     }
     deriving (Show)
 
@@ -246,7 +247,7 @@ advance' StateFree line pos char
     | ct == Just CharWhitespace =
         AdvNoToken StateFree
     | ct == Just CharNewline =
-        AdvToken StateFree (Token TokNewline line pos)
+        AdvToken StateFree (Token TokNewline line pos 1)
     | ct == Just CharLetter =
         AdvNoToken (StateAlpha [fromJust char] pos)
     | ct == Just CharDigit =
@@ -270,7 +271,7 @@ advance' (StateAlpha buf tokpos) line _ char
     | ct == Just CharDigit || ct == Just CharLetter =
         AdvNoToken (StateAlpha newBuf tokpos)
     | otherwise =
-        AdvNotConsumedToken StateFree (Token tokType line tokpos)
+        AdvNotConsumedToken StateFree (Token tokType line tokpos (length buf))
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
@@ -290,8 +291,8 @@ advance' (StateInt buf tokpos) line _ char
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
-        token num = Token (TokInteger $ fromIntegral num) line tokpos
-advance' (StateFrac whole buf tokpos) line _ char
+        token num = Token (TokInteger $ fromIntegral num) line tokpos (length buf)
+advance' (StateFrac whole buf tokpos) line pos char
     | ct == Just CharDigit =
         AdvNoToken (StateFrac whole newBuf tokpos)
     | char == Just 'e' || char == Just 'E' =
@@ -303,7 +304,7 @@ advance' (StateFrac whole buf tokpos) line _ char
     | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
         case bufDouble of
             Just double ->
-                AdvNotConsumedToken StateFree (Token (TokReal double) line tokpos)
+                AdvNotConsumedToken StateFree (Token (TokReal double) line tokpos (pos-tokpos))
             Nothing ->
                 AdvError $ ParserError line tokpos "Real number has incorrect format"
     | otherwise =
@@ -326,13 +327,13 @@ advance' (StateExpSign mant tokpos) line _ char
         AdvError $ ParserError line tokpos "Real number has incorrect format"
     where
         ct = fmap charType char
-advance' (StateExpVal mant sign buf tokpos) line _ char
+advance' (StateExpVal mant sign buf tokpos) line pos char
     | ct == Just CharDigit =
         AdvNoToken (StateExpVal mant sign newBuf tokpos)
     | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
         case bufDouble of
             Just dbl ->
-                AdvToken StateFree (Token (TokReal dbl) line tokpos)
+                AdvToken StateFree (Token (TokReal dbl) line tokpos (pos-tokpos))
             Nothing ->
                 AdvError $ ParserError line tokpos "Real number has incorrect format"
     | otherwise =
@@ -354,7 +355,7 @@ advance' (StateOperator buf tokpos) line _ char
         AdvNoToken (StateOperator newBuf tokpos)
     | otherwise =
         case operResult of
-            Just operTok -> AdvNotConsumedToken StateFree (Token operTok line tokpos)
+            Just operTok -> AdvNotConsumedToken StateFree (Token operTok line tokpos (length buf))
             Nothing -> AdvError $ ParserError line tokpos ("Unknown operator " ++ reverse buf)
     where
         ct = fmap charType char

@@ -24,7 +24,7 @@ data AppUI = AppUI
 buildLexTreeView :: IO (Gtk.TreeView, Gtk.ListStore)
 buildLexTreeView = do
     store <- new Gtk.ListStore []
-    #setColumnTypes store [gtypeString, gtypeInt64, gtypeInt64]
+    #setColumnTypes store [gtypeString, gtypeInt64, gtypeInt64, gtypeInt64]
 
     treeView <- new Gtk.TreeView
         [ #model := store
@@ -53,6 +53,13 @@ buildLexTreeView = do
     #setTitle posColumn "Pos"
     #appendColumn treeView posColumn
 
+    lenRenderer <- new Gtk.CellRendererText []
+    lenColumn <- new Gtk.TreeViewColumn []
+    #packStart lenColumn lenRenderer True
+    #addAttribute lenColumn lenRenderer "text" 3
+    #setTitle lenColumn "Len"
+    #appendColumn treeView lenColumn
+
     return (treeView, store)
 
 buildUI :: IO AppUI
@@ -74,7 +81,6 @@ buildUI = do
         , #rightMargin := 12
         , #bottomMargin := 12
         , #leftMargin := 12
-        , #canFocus := True
         ]
     sourceScroll <- new Gtk.ScrolledWindow []
     #add sourceScroll sourceEdit
@@ -117,14 +123,16 @@ buildUI = do
 lexStoreClear :: AppUI -> IO ()
 lexStoreClear = #clear . uiLexStore
 
-addLexStoreRow :: (Integral a, Integral b) => AppUI -> String -> a -> b -> IO ()
-addLexStoreRow appUI name line pos = do
+addLexStoreRow :: (Integral a, Integral b, Integral c) =>
+    AppUI -> String -> a -> b -> c -> IO ()
+addLexStoreRow appUI name line pos len = do
     let store = uiLexStore appUI
     nameGV <- toGValue $ Just name
     lineGV <- toGValue (fromIntegral line :: Int64)
     posGV <- toGValue (fromIntegral pos :: Int64)
+    lenGV <- toGValue (fromIntegral len :: Int64)
     iter <- #append store
-    #set store iter [0, 1, 2] [nameGV, lineGV, posGV]
+    #set store iter [0, 1, 2, 3] [nameGV, lineGV, posGV, lenGV]
 
 onLexButtonClicked :: AppUI -> IO ()
 onLexButtonClicked appUI = do
@@ -135,11 +143,11 @@ onLexButtonClicked appUI = do
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) -> do
             let errText = "Error on " ++ show line ++ ":" ++ show pos ++ ":\n" ++ msg
-            addLexStoreRow appUI msg (fromIntegral line) (fromIntegral pos)
+            addLexStoreRow appUI msg (fromIntegral line) (fromIntegral pos) 1
             return ()
         Right tokens -> do
-            mapM_ (\(Lex.Token typ line pos) ->
-                addLexStoreRow appUI (show typ) line pos) tokens
+            mapM_ (\(Lex.Token typ line pos len) ->
+                addLexStoreRow appUI (show typ) line pos len) tokens
             return ()
 
 onLexSelectionChanged :: AppUI -> IO ()
@@ -152,12 +160,17 @@ onLexSelectionChanged appUI = do
         posGV <- #getValue (uiLexStore appUI) iter 2
         pos <- fromGValue posGV :: IO Int64
 
+        lenGV <- #getValue (uiLexStore appUI) iter 3
+        len <- fromGValue lenGV :: IO Int64
+
         buffer <- #getBuffer $ uiSourceEdit appUI
         cursor <- #getIterAtLineOffset buffer (fromIntegral line - 1) (fromIntegral pos - 1)
         cursor2 <- #copy cursor
-        _ <- #forwardChar cursor2
+        _ <- #forwardChars cursor2 (fromIntegral len)
         #selectRange buffer cursor cursor2
-        #grabFocus $ uiSourceEdit appUI
+
+        _ <- #scrollToIter (uiSourceEdit appUI) cursor 0 True 0.5 0.5
+        return ()
 
 main :: IO ()
 main = do
