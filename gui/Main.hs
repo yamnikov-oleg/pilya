@@ -1,20 +1,57 @@
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import           Data.GI.Base (AttrOp ((:=)), get, new, on, set)
-import           Data.List    (intercalate)
-import           Data.Maybe   (fromJust)
-import qualified Data.Text    as T
-import qualified GI.Gtk       as Gtk
-import qualified Pilya.Lex    as Lex
+import           Data.GI.Base        (AttrOp ((:=)), get, gtypeString,
+                                      gtypeUInt, new, on, set)
+import           Data.GI.Base.GValue (IsGValue (toGValue))
+import           Data.Int            (Int64)
+import           Data.List           (intercalate)
+import           Data.Maybe          (fromJust)
+import qualified Data.Text           as T
+import qualified GI.Gtk              as Gtk
+import qualified Pilya.Lex           as Lex
 
 data AppUI = AppUI
     { uiWindow     :: Gtk.Window
     , uiSourceEdit :: Gtk.TextView
     , uiModeTabs   :: Gtk.Notebook
-    , uiLexOutput  :: Gtk.TextView
+    , uiLexStore   :: Gtk.ListStore
     , uiLexButton  :: Gtk.Button
     }
+
+buildLexTreeView :: IO (Gtk.TreeView, Gtk.ListStore)
+buildLexTreeView = do
+    store <- new Gtk.ListStore []
+    #setColumnTypes store [gtypeString, gtypeUInt, gtypeUInt]
+
+    treeView <- new Gtk.TreeView
+        [ #model := store
+        , #headersVisible := True
+        ]
+
+    nameRenderer <- new Gtk.CellRendererText []
+    nameColumn <- new Gtk.TreeViewColumn []
+    #packStart nameColumn nameRenderer True
+    #addAttribute nameColumn nameRenderer "text" 0
+    #setTitle nameColumn "Name"
+    #setExpand nameColumn True
+    #appendColumn treeView nameColumn
+
+    lineRenderer <- new Gtk.CellRendererText []
+    lineColumn <- new Gtk.TreeViewColumn []
+    #packStart lineColumn lineRenderer True
+    #addAttribute lineColumn lineRenderer "text" 1
+    #setTitle lineColumn "Line"
+    #appendColumn treeView lineColumn
+
+    posRenderer <- new Gtk.CellRendererText []
+    posColumn <- new Gtk.TreeViewColumn []
+    #packStart posColumn posRenderer True
+    #addAttribute posColumn posRenderer "text" 2
+    #setTitle posColumn "Pos"
+    #appendColumn treeView posColumn
+
+    return (treeView, store)
 
 buildUI :: IO AppUI
 buildUI = do
@@ -47,22 +84,14 @@ buildUI = do
 
     lexTabContainer <- new Gtk.Box
         [ #orientation := Gtk.OrientationVertical
-        , #margin := 6
-        , #spacing := 6
         ]
-    lexOutput <- new Gtk.TextView
-        [ #editable := False
-        , #cursorVisible := False
-        , #topMargin := 6
-        , #rightMargin := 6
-        , #bottomMargin := 6
-        , #leftMargin := 6
-        ]
+    (lexTreeView, lexStore) <- buildLexTreeView
     lexOutputScroll <- new Gtk.ScrolledWindow []
-    #add lexOutputScroll lexOutput
+    #add lexOutputScroll lexTreeView
     #packStart lexTabContainer lexOutputScroll True True 0
     lexButton <- new Gtk.Button
         [ #label := "Split into tokens"
+        , #margin := 6
         ]
     #packEnd lexTabContainer lexButton False False 0
     lexTabLabel <- new Gtk.Label
@@ -76,29 +105,36 @@ buildUI = do
         { uiWindow = window
         , uiSourceEdit = sourceEdit
         , uiModeTabs = modeTabs
-        , uiLexOutput = lexOutput
+        , uiLexStore = lexStore
         , uiLexButton = lexButton
         }
 
-tokensIntoReport :: [Lex.Token] -> T.Text
-tokensIntoReport tokens = T.pack $ intercalate "\n" $ fmap
-    (\(Lex.Token ttype tline tpos) ->
-        show tline ++ ":" ++ show tpos ++ " " ++ show ttype
-    ) tokens
+lexStoreClear :: AppUI -> IO ()
+lexStoreClear = #clear . uiLexStore
+
+addLexStoreRow :: (Integral a, Integral b) => AppUI -> String -> a -> b -> IO ()
+addLexStoreRow appUI name line pos = do
+    let store = uiLexStore appUI
+    nameGV <- toGValue $ Just name
+    lineGV <- toGValue (fromIntegral line :: Int64)
+    posGV <- toGValue (fromIntegral pos :: Int64)
+    iter <- #append store
+    #set store iter [0, 1, 2] [nameGV, lineGV, posGV]
 
 onLexButtonClicked :: AppUI -> IO ()
 onLexButtonClicked appUI = do
     srcBuffer <- uiSourceEdit appUI `get` #buffer
     source <- fmap fromJust $ srcBuffer `get` #text
+    lexStoreClear appUI
 
-    outBuffer <- uiLexOutput appUI `get` #buffer
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) -> do
             let errText = "Error on " ++ show line ++ ":" ++ show pos ++ ":\n" ++ msg
-            outBuffer `set` [ #text := T.pack errText ]
+            addLexStoreRow appUI msg (fromIntegral line) (fromIntegral pos)
             return ()
         Right tokens -> do
-            outBuffer `set` [ #text := tokensIntoReport tokens ]
+            mapM_ (\(Lex.Token typ line pos) ->
+                addLexStoreRow appUI (show typ) line pos) tokens
             return ()
 
 main :: IO ()
