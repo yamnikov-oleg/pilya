@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import           Data.GI.Base        (AttrOp ((:=)), get, gtypeString,
-                                      gtypeUInt, new, on, set)
-import           Data.GI.Base.GValue (IsGValue (toGValue))
+import           Control.Monad       (when)
+import           Data.GI.Base        (AttrOp ((:=)), get, gtypeInt64,
+                                      gtypeString, new, on, set)
+import           Data.GI.Base.GValue (IsGValue (fromGValue, toGValue))
 import           Data.Int            (Int64)
 import           Data.List           (intercalate)
 import           Data.Maybe          (fromJust)
@@ -12,17 +13,18 @@ import qualified GI.Gtk              as Gtk
 import qualified Pilya.Lex           as Lex
 
 data AppUI = AppUI
-    { uiWindow     :: Gtk.Window
-    , uiSourceEdit :: Gtk.TextView
-    , uiModeTabs   :: Gtk.Notebook
-    , uiLexStore   :: Gtk.ListStore
-    , uiLexButton  :: Gtk.Button
+    { uiWindow       :: Gtk.Window
+    , uiSourceEdit   :: Gtk.TextView
+    , uiModeTabs     :: Gtk.Notebook
+    , uiLexStore     :: Gtk.ListStore
+    , uiLexSelection :: Gtk.TreeSelection
+    , uiLexButton    :: Gtk.Button
     }
 
 buildLexTreeView :: IO (Gtk.TreeView, Gtk.ListStore)
 buildLexTreeView = do
     store <- new Gtk.ListStore []
-    #setColumnTypes store [gtypeString, gtypeUInt, gtypeUInt]
+    #setColumnTypes store [gtypeString, gtypeInt64, gtypeInt64]
 
     treeView <- new Gtk.TreeView
         [ #model := store
@@ -72,6 +74,7 @@ buildUI = do
         , #rightMargin := 12
         , #bottomMargin := 12
         , #leftMargin := 12
+        , #canFocus := True
         ]
     sourceScroll <- new Gtk.ScrolledWindow []
     #add sourceScroll sourceEdit
@@ -86,6 +89,7 @@ buildUI = do
         [ #orientation := Gtk.OrientationVertical
         ]
     (lexTreeView, lexStore) <- buildLexTreeView
+    lexSelection <- #getSelection lexTreeView
     lexOutputScroll <- new Gtk.ScrolledWindow []
     #add lexOutputScroll lexTreeView
     #packStart lexTabContainer lexOutputScroll True True 0
@@ -106,6 +110,7 @@ buildUI = do
         , uiSourceEdit = sourceEdit
         , uiModeTabs = modeTabs
         , uiLexStore = lexStore
+        , uiLexSelection = lexSelection
         , uiLexButton = lexButton
         }
 
@@ -137,11 +142,29 @@ onLexButtonClicked appUI = do
                 addLexStoreRow appUI (show typ) line pos) tokens
             return ()
 
+onLexSelectionChanged :: AppUI -> IO ()
+onLexSelectionChanged appUI = do
+    (selected, _, iter) <- #getSelected $ uiLexSelection appUI
+    when selected $ do
+        lineGV <- #getValue (uiLexStore appUI) iter 1
+        line <- fromGValue lineGV :: IO Int64
+
+        posGV <- #getValue (uiLexStore appUI) iter 2
+        pos <- fromGValue posGV :: IO Int64
+
+        buffer <- #getBuffer $ uiSourceEdit appUI
+        cursor <- #getIterAtLineOffset buffer (fromIntegral line - 1) (fromIntegral pos - 1)
+        cursor2 <- #copy cursor
+        _ <- #forwardChar cursor2
+        #selectRange buffer cursor cursor2
+        #grabFocus $ uiSourceEdit appUI
+
 main :: IO ()
 main = do
     Gtk.init Nothing
     appUI <- buildUI
     on (uiWindow appUI) #destroy Gtk.mainQuit
     on (uiLexButton appUI) #clicked (onLexButtonClicked appUI)
+    on (uiLexSelection appUI) #changed (onLexSelectionChanged appUI)
     #showAll (uiWindow appUI)
     Gtk.main
