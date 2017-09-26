@@ -2,6 +2,7 @@ module Pilya.Table
     ( Table
     , empty
     , tableList
+    , toList
     , append
     , tlookup
     , find
@@ -22,11 +23,17 @@ instance Show a => Show (Table a) where
             show ind ++ ": " ++ show (fromJust $ M.lookup ind tl)
         ) [0..size-1]) ++ "}"
 
+instance Foldable Table where
+    foldMap f tbl = foldMap f (toList tbl)
+
 empty :: Table a
 empty = Table M.empty 0
 
 tableList :: [a] -> Table a
 tableList = foldl (\tbl el -> snd $ append tbl el) empty
+
+toList :: Table a -> [a]
+toList tbl = fmap (fromJust . tlookup tbl) [0..tableSize tbl - 1]
 
 append :: Table a -> a -> (Int, Table a)
 append (Table oldLookup oldSize) el =

@@ -19,9 +19,9 @@ module Pilya.Lex
     , EntryNumber (..)
     , entryNumber
     , ParserEntries (..)
+    , Entry (..)
     , emptyParserEntries
     , pushEntry
-    , toParserEntries'
     , toParserEntries
     ) where
 
@@ -462,37 +462,50 @@ operatorTable = Tbl.tableList
     ]
 
 data EntryNumber = NumInteger Integer | NumReal Double
-    deriving (Show, Eq)
+    deriving (Eq)
+
+instance Show EntryNumber where
+    show (NumInteger int) = show int
+    show (NumReal dbl)    = show dbl
 
 entryNumber :: TokenType -> EntryNumber
 entryNumber (TokInteger int) = NumInteger int
 entryNumber (TokReal real)   = NumReal real
 entryNumber tt               = error $ "Invalid token type " ++ show tt
 
+data Entry = Entry
+    { entryLine  :: Int
+    , entryPos   :: Int
+    , entryLen   :: Int
+    , entryTable :: Int
+    , entryIndex :: Int
+    }
+    deriving (Show)
+
 data ParserEntries = ParserEntries
     { peIdentsTable  :: Tbl.Table String
     , peNumbersTable :: Tbl.Table EntryNumber
-    , peEntries      :: [(Int, Int)]
+    , peEntries      :: [Entry]
     }
     deriving (Show)
 
 emptyParserEntries :: ParserEntries
 emptyParserEntries = ParserEntries Tbl.empty Tbl.empty []
 
-pushEntry :: ParserEntries -> TokenType -> ParserEntries
-pushEntry (ParserEntries identTable numTable entries) tt
+pushEntry :: ParserEntries -> Token -> ParserEntries
+pushEntry (ParserEntries identTable numTable entries) (Token tt line pos len)
     | isJust kwIndex =
-        ParserEntries identTable numTable (entries ++ [(0, fromJust kwIndex)])
+        ParserEntries identTable numTable (entries ++ [entr 0 (fromJust kwIndex)])
     | isJust operIndex =
-        ParserEntries identTable numTable (entries ++ [(1, fromJust operIndex)])
+        ParserEntries identTable numTable (entries ++ [entr 1 (fromJust operIndex)])
     | isTokIdent tt && isJust identIndex =
-        ParserEntries identTable numTable (entries ++ [(2, fromJust identIndex)])
+        ParserEntries identTable numTable (entries ++ [entr 2 (fromJust identIndex)])
     | isTokIdent tt && isNothing identIndex =
-        ParserEntries newIdentTable numTable (entries ++ [(2, newIdentIndex)])
+        ParserEntries newIdentTable numTable (entries ++ [entr 2 newIdentIndex])
     | isTokNumber tt && isJust numIndex =
-        ParserEntries identTable numTable (entries ++ [(3, fromJust numIndex)])
+        ParserEntries identTable numTable (entries ++ [entr 3 (fromJust numIndex)])
     | isTokNumber tt && isNothing numIndex =
-        ParserEntries identTable newNumTable (entries ++ [(3, newNumIndex)])
+        ParserEntries identTable newNumTable (entries ++ [entr 3 newNumIndex])
     | otherwise =
         error $ "Unexpected TokenType " ++ show tt
     where
@@ -502,9 +515,7 @@ pushEntry (ParserEntries identTable numTable entries) tt
         (newIdentIndex, newIdentTable) = Tbl.append identTable $ identString tt
         numIndex = Tbl.find numTable $ entryNumber tt
         (newNumIndex, newNumTable) = Tbl.append numTable $ entryNumber tt
-
-toParserEntries' :: [TokenType] -> ParserEntries
-toParserEntries' = foldl pushEntry emptyParserEntries
+        entr tbl ind = Entry line pos len tbl ind
 
 toParserEntries :: [Token] -> ParserEntries
-toParserEntries = toParserEntries' . map tokenType
+toParserEntries = foldl pushEntry emptyParserEntries

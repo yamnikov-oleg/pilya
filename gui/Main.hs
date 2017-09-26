@@ -12,6 +12,7 @@ import           Data.Maybe          (fromJust)
 import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
 import qualified Pilya.Lex           as Lex
+import qualified Pilya.Table         as Tbl
 
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
@@ -19,6 +20,10 @@ data AppUI = AppUI
     { uiWindow       :: Gtk.Window
     , uiSourceEdit   :: Gtk.TextView
     , uiModeTabs     :: Gtk.Notebook
+    , uiLexKwStore   :: Gtk.ListStore
+    , uiLexOpStore   :: Gtk.ListStore
+    , uiLexIdStore   :: Gtk.ListStore
+    , uiLexNumStore  :: Gtk.ListStore
     , uiLexStore     :: Gtk.ListStore
     , uiLexSelection :: Gtk.TreeSelection
     , uiLexButton    :: Gtk.Button
@@ -52,8 +57,8 @@ buildUI :: IO AppUI
 buildUI = do
     window <- new Gtk.Window
         [ #title := "Pilya Lang"
-        , #widthRequest := 800
-        , #heightRequest := 600
+        , #widthRequest := 1000
+        , #heightRequest := 700
         ]
 
     rootPaned <- new Gtk.Paned
@@ -62,8 +67,10 @@ buildUI = do
         ]
     #add window rootPaned
 
-    sourceScroll <- new Gtk.ScrolledWindow []
-    #pack1 rootPaned sourceScroll True True
+    sourceScroll <- new Gtk.ScrolledWindow
+        [ #widthRequest := 300
+        ]
+    #pack1 rootPaned sourceScroll True False
 
     sourceEdit <- new Gtk.TextView
         [ #monospace := True
@@ -75,9 +82,9 @@ buildUI = do
     #add sourceScroll sourceEdit
 
     modeTabs <- new Gtk.Notebook
-        [ #widthRequest := 300
+        [ #widthRequest := 450
         ]
-    #pack2 rootPaned modeTabs False True
+    #pack2 rootPaned modeTabs False False
 
     lexTabContainer <- new Gtk.Box
         [ #orientation := Gtk.OrientationVertical
@@ -87,8 +94,52 @@ buildUI = do
         ]
     #appendPage modeTabs lexTabContainer (Just lexTabLabel)
 
-    lexResultsGrid <- new Gtk.Grid []
+    lexResultsGrid <- new Gtk.Grid
+        [ #rowSpacing := 6
+        , #columnSpacing := 6
+        , #margin := 6
+        ]
     #packStart lexTabContainer lexResultsGrid True True 0
+
+    (lexKwScroll, lexKwTreeView, lexKwStore) <- buildListView
+        [ ("Index", gtypeString)
+        , ("Content", gtypeString)
+        ]
+    set lexKwScroll
+        [ #hexpand := True
+        , #vexpand := True
+        ]
+    #attach lexResultsGrid lexKwScroll 1 1 1 1
+
+    (lexOpScroll, lexOpTreeView, lexOpStore) <- buildListView
+        [ ("Index", gtypeString)
+        , ("Content", gtypeString)
+        ]
+    set lexOpScroll
+        [ #hexpand := True
+        , #vexpand := True
+        ]
+    #attach lexResultsGrid lexOpScroll 2 1 1 1
+
+    (lexIdScroll, lexIdTreeView, lexIdStore) <- buildListView
+        [ ("Index", gtypeString)
+        , ("Value", gtypeString)
+        ]
+    set lexIdScroll
+        [ #hexpand := True
+        , #vexpand := True
+        ]
+    #attach lexResultsGrid lexIdScroll 1 2 1 1
+
+    (lexNumScroll, lexNumTreeView, lexNumStore) <- buildListView
+        [ ("Index", gtypeString)
+        , ("Value", gtypeString)
+        ]
+    set lexNumScroll
+        [ #hexpand := True
+        , #vexpand := True
+        ]
+    #attach lexResultsGrid lexNumScroll 2 2 1 1
 
     (lexOutputScroll, lexTreeView, lexStore) <- buildListView
         [ ("Name", gtypeString)
@@ -100,7 +151,7 @@ buildUI = do
         [ #hexpand := True
         , #vexpand := True
         ]
-    #attach lexResultsGrid lexOutputScroll 1 1 1 1
+    #attach lexResultsGrid lexOutputScroll 1 3 2 1
     lexSelection <- #getSelection lexTreeView
 
     lexButton <- new Gtk.Button
@@ -113,6 +164,10 @@ buildUI = do
         { uiWindow = window
         , uiSourceEdit = sourceEdit
         , uiModeTabs = modeTabs
+        , uiLexKwStore = lexKwStore
+        , uiLexOpStore = lexOpStore
+        , uiLexIdStore = lexIdStore
+        , uiLexNumStore = lexNumStore
         , uiLexStore = lexStore
         , uiLexSelection = lexSelection
         , uiLexButton = lexButton
@@ -161,18 +216,35 @@ addStoreRow store values = do
     iter <- #append store
     #set store iter indices gvals
 
+fillLexStoreFromTable :: (Show a) => Gtk.ListStore -> Int -> Tbl.Table a -> IO ()
+fillLexStoreFromTable store tblIndex tbl = do
+    let enumerated = zip ([0..] :: [Int]) $ Tbl.toList tbl
+    let toRow (ind, value) = (show (tblIndex, ind), show value)
+    mapM_ (addStoreRow store . toRow) enumerated
+
 onLexButtonClicked :: AppUI -> IO ()
 onLexButtonClicked appUI = do
     srcBuffer <- uiSourceEdit appUI `get` #buffer
     source <- fmap fromJust $ srcBuffer `get` #text
     #clear $ uiLexStore appUI
+    #clear $ uiLexKwStore appUI
+    #clear $ uiLexOpStore appUI
+    #clear $ uiLexIdStore appUI
+    #clear $ uiLexNumStore appUI
 
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) ->
             addStoreRow (uiLexStore appUI) (msg, line, pos, 1::Int)
-        Right tokens ->
-            mapM_ (\(Lex.Token typ line pos len) ->
-                addStoreRow (uiLexStore appUI) (show typ, line, pos, len)) tokens
+        Right tokens -> do
+            let (Lex.ParserEntries idTable numTable entries) = Lex.toParserEntries tokens
+
+            fillLexStoreFromTable (uiLexKwStore appUI) 0 Lex.keywordsTable
+            fillLexStoreFromTable (uiLexOpStore appUI) 1 Lex.operatorTable
+            fillLexStoreFromTable (uiLexIdStore appUI) 2 idTable
+            fillLexStoreFromTable (uiLexNumStore appUI) 3 numTable
+
+            mapM_ (\(Lex.Entry line pos len tbl ind) ->
+                addStoreRow (uiLexStore appUI) (show (tbl, ind), line, pos, len)) entries
 
 onLexSelectionChanged :: AppUI -> IO ()
 onLexSelectionChanged appUI = do
