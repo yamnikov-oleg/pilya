@@ -1,5 +1,7 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
+module Main where
 
 import           Control.Monad       (when)
 import           Data.GI.Base        (AttrOp ((:=)), get, gtypeInt64,
@@ -10,6 +12,8 @@ import           Data.Maybe          (fromJust)
 import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
 import qualified Pilya.Lex           as Lex
+
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
 data AppUI = AppUI
     { uiWindow       :: Gtk.Window
@@ -114,16 +118,48 @@ buildUI = do
         , uiLexButton = lexButton
         }
 
-addLexStoreRow :: (Integral a, Integral b, Integral c) =>
-    AppUI -> String -> a -> b -> c -> IO ()
-addLexStoreRow appUI name line pos len = do
-    let store = uiLexStore appUI
-    nameGV <- toGValue $ Just name
-    lineGV <- toGValue (fromIntegral line :: Int64)
-    posGV <- toGValue (fromIntegral pos :: Int64)
-    lenGV <- toGValue (fromIntegral len :: Int64)
+instance IsGValue [Char] where
+    toGValue = toGValue . Just
+    fromGValue gv = do
+        maybeStr <- fromGValue gv
+        return $ fromJust maybeStr
+
+instance IsGValue Int where
+    toGValue num = toGValue (fromIntegral num :: Int64)
+    fromGValue gv = do
+        i64 <- fromGValue gv :: IO Int64
+        return $ fromIntegral i64
+
+class ToGValueList a where
+    toGValueList :: a -> IO [Gtk.GValue]
+
+instance (IsGValue a, IsGValue b) => ToGValueList (a, b) where
+    toGValueList (x1, x2) = do
+        gv1 <- toGValue x1
+        gv2 <- toGValue x2
+        return [gv1, gv2]
+
+instance (IsGValue a, IsGValue b, IsGValue c) => ToGValueList (a, b, c) where
+    toGValueList (x1, x2, x3) = do
+        gv1 <- toGValue x1
+        gv2 <- toGValue x2
+        gv3 <- toGValue x3
+        return [gv1, gv2, gv3]
+
+instance (IsGValue a, IsGValue b, IsGValue c, IsGValue d) => ToGValueList (a, b, c, d) where
+    toGValueList (x1, x2, x3, x4) = do
+        gv1 <- toGValue x1
+        gv2 <- toGValue x2
+        gv3 <- toGValue x3
+        gv4 <- toGValue x4
+        return [gv1, gv2, gv3, gv4]
+
+addStoreRow :: (ToGValueList v) => Gtk.ListStore -> v -> IO ()
+addStoreRow store values = do
+    gvals <- toGValueList values
+    let indices = take (length gvals) [0..]
     iter <- #append store
-    #set store iter [0, 1, 2, 3] [nameGV, lineGV, posGV, lenGV]
+    #set store iter indices gvals
 
 onLexButtonClicked :: AppUI -> IO ()
 onLexButtonClicked appUI = do
@@ -133,10 +169,10 @@ onLexButtonClicked appUI = do
 
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) ->
-            addLexStoreRow appUI msg line pos (1::Int64)
+            addStoreRow (uiLexStore appUI) (msg, line, pos, 1::Int)
         Right tokens ->
             mapM_ (\(Lex.Token typ line pos len) ->
-                addLexStoreRow appUI (show typ) line pos len) tokens
+                addStoreRow (uiLexStore appUI) (show typ, line, pos, len)) tokens
 
 onLexSelectionChanged :: AppUI -> IO ()
 onLexSelectionChanged appUI = do
