@@ -72,6 +72,10 @@ buildUI = do
         [ #wideHandle := True
         , #orientation := Gtk.OrientationHorizontal
         ]
+    #add window rootPaned
+
+    sourceScroll <- new Gtk.ScrolledWindow []
+    #pack1 rootPaned sourceScroll True True
 
     sourceEdit <- new Gtk.TextView
         [ #monospace := True
@@ -80,9 +84,7 @@ buildUI = do
         , #bottomMargin := 12
         , #leftMargin := 12
         ]
-    sourceScroll <- new Gtk.ScrolledWindow []
     #add sourceScroll sourceEdit
-    #pack1 rootPaned sourceScroll True True
 
     modeTabs <- new Gtk.Notebook
         [ #widthRequest := 300
@@ -92,22 +94,23 @@ buildUI = do
     lexTabContainer <- new Gtk.Box
         [ #orientation := Gtk.OrientationVertical
         ]
-    (lexTreeView, lexStore) <- buildLexTreeView
-    lexSelection <- #getSelection lexTreeView
-    lexOutputScroll <- new Gtk.ScrolledWindow []
-    #add lexOutputScroll lexTreeView
-    #packStart lexTabContainer lexOutputScroll True True 0
-    lexButton <- new Gtk.Button
-        [ #label := "Split into tokens"
-        , #margin := 6
-        ]
-    #packEnd lexTabContainer lexButton False False 0
     lexTabLabel <- new Gtk.Label
         [ #label := "Lexics"
         ]
     #appendPage modeTabs lexTabContainer (Just lexTabLabel)
 
-    #add window rootPaned
+    lexOutputScroll <- new Gtk.ScrolledWindow []
+    #packStart lexTabContainer lexOutputScroll True True 0
+
+    (lexTreeView, lexStore) <- buildLexTreeView
+    lexSelection <- #getSelection lexTreeView
+    #add lexOutputScroll lexTreeView
+
+    lexButton <- new Gtk.Button
+        [ #label := "Split into tokens"
+        , #margin := 6
+        ]
+    #packEnd lexTabContainer lexButton False False 0
 
     return AppUI
         { uiWindow = window
@@ -139,13 +142,11 @@ onLexButtonClicked appUI = do
     lexStoreClear appUI
 
     case Lex.parse source of
-        Left (Lex.ParserError line pos msg) -> do
+        Left (Lex.ParserError line pos msg) ->
             addLexStoreRow appUI msg line pos (1::Int64)
-            return ()
-        Right tokens -> do
+        Right tokens ->
             mapM_ (\(Lex.Token typ line pos len) ->
                 addLexStoreRow appUI (show typ) line pos len) tokens
-            return ()
 
 onLexSelectionChanged :: AppUI -> IO ()
 onLexSelectionChanged appUI = do
