@@ -99,8 +99,14 @@ buildUI = do
         ]
     #appendPage modeTabs lexTabContainer (Just lexTabLabel)
 
-    lexOutputScroll <- new Gtk.ScrolledWindow []
-    #packStart lexTabContainer lexOutputScroll True True 0
+    lexResultsGrid <- new Gtk.Grid []
+    #packStart lexTabContainer lexResultsGrid True True 0
+
+    lexOutputScroll <- new Gtk.ScrolledWindow
+        [ #hexpand := True
+        , #vexpand := True
+        ]
+    #attach lexResultsGrid lexOutputScroll 1 1 1 1
 
     (lexTreeView, lexStore) <- buildLexTreeView
     lexSelection <- #getSelection lexTreeView
