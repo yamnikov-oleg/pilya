@@ -3,10 +3,11 @@
 
 import           Control.Monad       (when)
 import           Data.GI.Base        (AttrOp ((:=)), get, gtypeInt64,
-                                      gtypeString, new, on)
+                                      gtypeString, new, on, set)
 import           Data.GI.Base.GValue (IsGValue (fromGValue, toGValue))
 import           Data.Int            (Int64)
 import           Data.Maybe          (fromJust)
+import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
 import qualified Pilya.Lex           as Lex
 
@@ -19,46 +20,29 @@ data AppUI = AppUI
     , uiLexButton    :: Gtk.Button
     }
 
-buildLexTreeView :: IO (Gtk.TreeView, Gtk.ListStore)
-buildLexTreeView = do
+buildListView :: [(T.Text, Gtk.GType)] -> IO (Gtk.ScrolledWindow, Gtk.TreeView, Gtk.ListStore)
+buildListView columns = do
     store <- new Gtk.ListStore []
-    #setColumnTypes store [gtypeString, gtypeInt64, gtypeInt64, gtypeInt64]
+    #setColumnTypes store $ map snd columns
 
     treeView <- new Gtk.TreeView
         [ #model := store
         , #headersVisible := True
         ]
 
-    nameRenderer <- new Gtk.CellRendererText []
-    nameColumn <- new Gtk.TreeViewColumn []
-    #packStart nameColumn nameRenderer True
-    #addAttribute nameColumn nameRenderer "text" 0
-    #setTitle nameColumn "Name"
-    #setExpand nameColumn True
-    #appendColumn treeView nameColumn
+    mapM_ (\(index, title) -> do
+        renderer <- new Gtk.CellRendererText []
+        column <- new Gtk.TreeViewColumn []
+        #packStart column renderer True
+        #addAttribute column renderer "text" index
+        #setTitle column title
+        #setExpand column True
+        #appendColumn treeView column) $ zip [0..] $ map fst columns
 
-    lineRenderer <- new Gtk.CellRendererText []
-    lineColumn <- new Gtk.TreeViewColumn []
-    #packStart lineColumn lineRenderer True
-    #addAttribute lineColumn lineRenderer "text" 1
-    #setTitle lineColumn "Line"
-    #appendColumn treeView lineColumn
+    wind <- new Gtk.ScrolledWindow []
+    #add wind treeView
 
-    posRenderer <- new Gtk.CellRendererText []
-    posColumn <- new Gtk.TreeViewColumn []
-    #packStart posColumn posRenderer True
-    #addAttribute posColumn posRenderer "text" 2
-    #setTitle posColumn "Pos"
-    #appendColumn treeView posColumn
-
-    lenRenderer <- new Gtk.CellRendererText []
-    lenColumn <- new Gtk.TreeViewColumn []
-    #packStart lenColumn lenRenderer True
-    #addAttribute lenColumn lenRenderer "text" 3
-    #setTitle lenColumn "Len"
-    #appendColumn treeView lenColumn
-
-    return (treeView, store)
+    return (wind, treeView, store)
 
 buildUI :: IO AppUI
 buildUI = do
@@ -102,15 +86,18 @@ buildUI = do
     lexResultsGrid <- new Gtk.Grid []
     #packStart lexTabContainer lexResultsGrid True True 0
 
-    lexOutputScroll <- new Gtk.ScrolledWindow
+    (lexOutputScroll, lexTreeView, lexStore) <- buildListView
+        [ ("Name", gtypeString)
+        , ("Line", gtypeInt64)
+        , ("Pos", gtypeInt64)
+        , ("Len", gtypeInt64)
+        ]
+    set lexOutputScroll
         [ #hexpand := True
         , #vexpand := True
         ]
     #attach lexResultsGrid lexOutputScroll 1 1 1 1
-
-    (lexTreeView, lexStore) <- buildLexTreeView
     lexSelection <- #getSelection lexTreeView
-    #add lexOutputScroll lexTreeView
 
     lexButton <- new Gtk.Button
         [ #label := "Split into tokens"
@@ -127,9 +114,6 @@ buildUI = do
         , uiLexButton = lexButton
         }
 
-lexStoreClear :: AppUI -> IO ()
-lexStoreClear = #clear . uiLexStore
-
 addLexStoreRow :: (Integral a, Integral b, Integral c) =>
     AppUI -> String -> a -> b -> c -> IO ()
 addLexStoreRow appUI name line pos len = do
@@ -145,7 +129,7 @@ onLexButtonClicked :: AppUI -> IO ()
 onLexButtonClicked appUI = do
     srcBuffer <- uiSourceEdit appUI `get` #buffer
     source <- fmap fromJust $ srcBuffer `get` #text
-    lexStoreClear appUI
+    #clear $ uiLexStore appUI
 
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) ->
