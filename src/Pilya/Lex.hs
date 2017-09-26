@@ -1,5 +1,12 @@
 module Pilya.Lex
     ( TokenType(..)
+    , isTokIdent
+    , identString
+    , isTokInteger
+    , integerValue
+    , isTokReal
+    , realValue
+    , isTokNumber
     , Token(..)
     , ParserState(..)
     , Parser(..)
@@ -7,6 +14,15 @@ module Pilya.Lex
     , newParser
     , advance
     , parse
+    , keywordsTable
+    , operatorTable
+    , EntryNumber (..)
+    , entryNumber
+    , ParserEntries (..)
+    , emptyParserEntries
+    , pushEntry
+    , toParserEntries'
+    , toParserEntries
     ) where
 
 import           Control.Applicative ((<$>))
@@ -16,6 +32,7 @@ import           Data.List           (elemIndex)
 import           Data.Maybe          (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Text           (Text)
 import qualified Data.Text           as T
+import qualified Pilya.Table         as Tbl
 import           Text.Read           (readMaybe)
 
 data TokenType
@@ -59,7 +76,7 @@ data TokenType
     | TokKwWrite -- write
     | TokComma -- ,
     | TokKwEnd -- end
-    deriving (Show)
+    deriving (Show, Eq)
 
 fromKeyword :: String -> Maybe TokenType
 fromKeyword kw = case kw of
@@ -104,6 +121,33 @@ fromOperator op = case op of
     "]"  -> Just TokBracketClose
     ","  -> Just TokComma
     _    -> Nothing
+
+isTokIdent :: TokenType -> Bool
+isTokIdent (TokIdent _) = True
+isTokIdent _            = False
+
+identString :: TokenType -> String
+identString (TokIdent s) = s
+identString tt           = error $ show tt ++ " is not an identifier"
+
+isTokInteger :: TokenType -> Bool
+isTokInteger (TokInteger _) = True
+isTokInteger _              = False
+
+integerValue :: TokenType -> Integer
+integerValue (TokInteger i) = i
+integerValue tt             = error $ show tt ++ " is not an integer"
+
+isTokReal :: TokenType -> Bool
+isTokReal (TokReal _) = True
+isTokReal _           = False
+
+realValue :: TokenType -> Double
+realValue (TokReal d) = d
+realValue tt          = error $ show tt ++ " is not a real number"
+
+isTokNumber :: TokenType -> Bool
+isTokNumber tt = isTokInteger tt || isTokReal tt
 
 data Token = Token
     { tokenType   :: TokenType
@@ -371,3 +415,96 @@ parse text =
     where
         charQueue = fmap Just (T.unpack text) ++ [Nothing]
         finResult = foldM advance newParser charQueue
+
+keywordsTable :: Tbl.Table TokenType
+keywordsTable = Tbl.tableList
+    [ TokKwOr -- or
+    , TokKwAnd -- and
+    , TokKwNot -- not
+    , TokKwTrue -- true
+    , TokKwFalse -- false
+    , TokKwDim -- dim
+    , TokKwAs -- as
+    , TokKwIf -- if
+    , TokKwThen -- then
+    , TokKwElse -- else
+    , TokKwFor -- for
+    , TokKwTo -- to
+    , TokKwDo -- do
+    , TokKwWhile -- while
+    , TokKwRead -- read
+    , TokKwWrite -- write
+    , TokKwEnd -- end
+    ]
+
+operatorTable :: Tbl.Table TokenType
+operatorTable = Tbl.tableList
+    [ TokNewline -- \n
+    , TokSemicolon -- :
+    , TokNeq -- <>
+    , TokEq -- =
+    , TokLt -- <
+    , TokLte -- <=
+    , TokGt -- >
+    , TokGte -- >=
+    , TokPlus -- +
+    , TokMinus -- -
+    , TokMult -- *
+    , TokDiv -- /
+    , TokParenthesisOpen -- (
+    , TokParenthesisClose -- )
+    , TokPercent -- %, denotes integer type
+    , TokExcl -- !, denotes real type
+    , TokDollar -- $, denotes boolean type
+    , TokBracketOpen -- [
+    , TokBracketClose -- ]
+    , TokComma -- ,
+    ]
+
+data EntryNumber = NumInteger Integer | NumReal Double
+    deriving (Show, Eq)
+
+entryNumber :: TokenType -> EntryNumber
+entryNumber (TokInteger int) = NumInteger int
+entryNumber (TokReal real)   = NumReal real
+entryNumber tt               = error $ "Invalid token type " ++ show tt
+
+data ParserEntries = ParserEntries
+    { peIdentsTable  :: Tbl.Table String
+    , peNumbersTable :: Tbl.Table EntryNumber
+    , peEntries      :: [(Int, Int)]
+    }
+    deriving (Show)
+
+emptyParserEntries :: ParserEntries
+emptyParserEntries = ParserEntries Tbl.empty Tbl.empty []
+
+pushEntry :: ParserEntries -> TokenType -> ParserEntries
+pushEntry (ParserEntries identTable numTable entries) tt
+    | isJust kwIndex =
+        ParserEntries identTable numTable (entries ++ [(0, fromJust kwIndex)])
+    | isJust operIndex =
+        ParserEntries identTable numTable (entries ++ [(1, fromJust operIndex)])
+    | isTokIdent tt && isJust identIndex =
+        ParserEntries identTable numTable (entries ++ [(2, fromJust identIndex)])
+    | isTokIdent tt && isNothing identIndex =
+        ParserEntries newIdentTable numTable (entries ++ [(2, newIdentIndex)])
+    | isTokNumber tt && isJust numIndex =
+        ParserEntries identTable numTable (entries ++ [(3, fromJust numIndex)])
+    | isTokNumber tt && isNothing numIndex =
+        ParserEntries identTable newNumTable (entries ++ [(3, newNumIndex)])
+    | otherwise =
+        error $ "Unexpected TokenType " ++ show tt
+    where
+        kwIndex = Tbl.find keywordsTable tt
+        operIndex = Tbl.find operatorTable tt
+        identIndex = Tbl.find identTable $ identString tt
+        (newIdentIndex, newIdentTable) = Tbl.append identTable $ identString tt
+        numIndex = Tbl.find numTable $ entryNumber tt
+        (newNumIndex, newNumTable) = Tbl.append numTable $ entryNumber tt
+
+toParserEntries' :: [TokenType] -> ParserEntries
+toParserEntries' = foldl pushEntry emptyParserEntries
+
+toParserEntries :: [Token] -> ParserEntries
+toParserEntries = toParserEntries' . map tokenType
