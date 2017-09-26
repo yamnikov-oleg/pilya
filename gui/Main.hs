@@ -3,11 +3,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Control.Monad       (when)
+import           Control.Monad       (forM_, when)
 import           Data.GI.Base        (AttrOp ((:=)), get, gtypeInt64,
                                       gtypeString, new, on, set)
 import           Data.GI.Base.GValue (IsGValue (fromGValue, toGValue))
+import           Data.Int            (Int32)
 import           Data.Int            (Int64)
+import           Data.Maybe          (isJust)
 import           Data.Maybe          (fromJust)
 import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
@@ -20,16 +22,20 @@ data AppUI = AppUI
     { uiWindow       :: Gtk.Window
     , uiSourceEdit   :: Gtk.TextView
     , uiModeTabs     :: Gtk.Notebook
+    , uiLexKwTree    :: Gtk.TreeView
     , uiLexKwStore   :: Gtk.ListStore
+    , uiLexOpTree    :: Gtk.TreeView
     , uiLexOpStore   :: Gtk.ListStore
+    , uiLexIdTree    :: Gtk.TreeView
     , uiLexIdStore   :: Gtk.ListStore
+    , uiLexNumTree   :: Gtk.TreeView
     , uiLexNumStore  :: Gtk.ListStore
     , uiLexStore     :: Gtk.ListStore
     , uiLexSelection :: Gtk.TreeSelection
     , uiLexButton    :: Gtk.Button
     }
 
-buildListView :: [(T.Text, Gtk.GType)] -> IO (Gtk.ScrolledWindow, Gtk.TreeView, Gtk.ListStore)
+buildListView :: [(Maybe T.Text, Gtk.GType)] -> IO (Gtk.ScrolledWindow, Gtk.TreeView, Gtk.ListStore)
 buildListView columns = do
     store <- new Gtk.ListStore []
     #setColumnTypes store $ map snd columns
@@ -44,9 +50,9 @@ buildListView columns = do
         column <- new Gtk.TreeViewColumn []
         #packStart column renderer True
         #addAttribute column renderer "text" index
-        #setTitle column title
+        #setTitle column $ fromJust title
         #setExpand column True
-        #appendColumn treeView column) $ zip [0..] $ map fst columns
+        #appendColumn treeView column) $ filter (isJust . snd) $ zip [0..] $ map fst columns
 
     wind <- new Gtk.ScrolledWindow []
     #add wind treeView
@@ -102,8 +108,8 @@ buildUI = do
     #packStart lexTabContainer lexResultsGrid True True 0
 
     (lexKwScroll, lexKwTreeView, lexKwStore) <- buildListView
-        [ ("Index", gtypeString)
-        , ("Content", gtypeString)
+        [ (Just "Index", gtypeString)
+        , (Just "Content", gtypeString)
         ]
     set lexKwScroll
         [ #hexpand := True
@@ -112,8 +118,8 @@ buildUI = do
     #attach lexResultsGrid lexKwScroll 1 1 1 1
 
     (lexOpScroll, lexOpTreeView, lexOpStore) <- buildListView
-        [ ("Index", gtypeString)
-        , ("Content", gtypeString)
+        [ (Just "Index", gtypeString)
+        , (Just "Content", gtypeString)
         ]
     set lexOpScroll
         [ #hexpand := True
@@ -122,8 +128,8 @@ buildUI = do
     #attach lexResultsGrid lexOpScroll 2 1 1 1
 
     (lexIdScroll, lexIdTreeView, lexIdStore) <- buildListView
-        [ ("Index", gtypeString)
-        , ("Value", gtypeString)
+        [ (Just "Index", gtypeString)
+        , (Just "Value", gtypeString)
         ]
     set lexIdScroll
         [ #hexpand := True
@@ -132,8 +138,8 @@ buildUI = do
     #attach lexResultsGrid lexIdScroll 1 2 1 1
 
     (lexNumScroll, lexNumTreeView, lexNumStore) <- buildListView
-        [ ("Index", gtypeString)
-        , ("Value", gtypeString)
+        [ (Just "Index", gtypeString)
+        , (Just "Value", gtypeString)
         ]
     set lexNumScroll
         [ #hexpand := True
@@ -142,10 +148,12 @@ buildUI = do
     #attach lexResultsGrid lexNumScroll 2 2 1 1
 
     (lexOutputScroll, lexTreeView, lexStore) <- buildListView
-        [ ("Name", gtypeString)
-        , ("Line", gtypeInt64)
-        , ("Pos", gtypeInt64)
-        , ("Len", gtypeInt64)
+        [ (Just "Name", gtypeString)
+        , (Just "Line", gtypeInt64)
+        , (Just "Pos", gtypeInt64)
+        , (Just "Len", gtypeInt64)
+        , (Nothing, gtypeInt64) -- Entry Table
+        , (Nothing, gtypeInt64) -- Entry Index
         ]
     set lexOutputScroll
         [ #hexpand := True
@@ -164,9 +172,13 @@ buildUI = do
         { uiWindow = window
         , uiSourceEdit = sourceEdit
         , uiModeTabs = modeTabs
+        , uiLexKwTree = lexKwTreeView
         , uiLexKwStore = lexKwStore
+        , uiLexOpTree = lexOpTreeView
         , uiLexOpStore = lexOpStore
+        , uiLexIdTree = lexIdTreeView
         , uiLexIdStore = lexIdStore
+        , uiLexNumTree = lexNumTreeView
         , uiLexNumStore = lexNumStore
         , uiLexStore = lexStore
         , uiLexSelection = lexSelection
@@ -209,6 +221,25 @@ instance (IsGValue a, IsGValue b, IsGValue c, IsGValue d) => ToGValueList (a, b,
         gv4 <- toGValue x4
         return [gv1, gv2, gv3, gv4]
 
+instance (IsGValue a, IsGValue b, IsGValue c, IsGValue d, IsGValue e) => ToGValueList (a, b, c, d, e) where
+    toGValueList (x1, x2, x3, x4, x5) = do
+        gv1 <- toGValue x1
+        gv2 <- toGValue x2
+        gv3 <- toGValue x3
+        gv4 <- toGValue x4
+        gv5 <- toGValue x5
+        return [gv1, gv2, gv3, gv4, gv5]
+
+instance (IsGValue a, IsGValue b, IsGValue c, IsGValue d, IsGValue e, IsGValue f) => ToGValueList (a, b, c, d, e, f) where
+    toGValueList (x1, x2, x3, x4, x5, x6) = do
+        gv1 <- toGValue x1
+        gv2 <- toGValue x2
+        gv3 <- toGValue x3
+        gv4 <- toGValue x4
+        gv5 <- toGValue x5
+        gv6 <- toGValue x6
+        return [gv1, gv2, gv3, gv4, gv5, gv6]
+
 addStoreRow :: (ToGValueList v) => Gtk.ListStore -> v -> IO ()
 addStoreRow store values = do
     gvals <- toGValueList values
@@ -234,7 +265,7 @@ onLexButtonClicked appUI = do
 
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) ->
-            addStoreRow (uiLexStore appUI) (msg, line, pos, 1::Int)
+            addStoreRow (uiLexStore appUI) (msg, line, pos, 1::Int, -1::Int, -1::Int)
         Right tokens -> do
             let (Lex.ParserEntries idTable numTable entries) = Lex.toParserEntries tokens
 
@@ -244,7 +275,41 @@ onLexButtonClicked appUI = do
             fillLexStoreFromTable (uiLexNumStore appUI) 3 numTable
 
             mapM_ (\(Lex.Entry line pos len tbl ind) ->
-                addStoreRow (uiLexStore appUI) (show (tbl, ind), line, pos, len)) entries
+                addStoreRow (uiLexStore appUI) (show (tbl, ind), line, pos, len, tbl, ind)) entries
+
+getLexTreeByIndex :: AppUI -> Int -> Maybe Gtk.TreeView
+getLexTreeByIndex appUI 0 = Just $ uiLexKwTree appUI
+getLexTreeByIndex appUI 1 = Just $ uiLexOpTree appUI
+getLexTreeByIndex appUI 2 = Just $ uiLexIdTree appUI
+getLexTreeByIndex appUI 3 = Just $ uiLexNumTree appUI
+getLexTreeByIndex _ _     = Nothing
+
+lexUnselectAll :: AppUI -> IO ()
+lexUnselectAll appUI = do
+    kwSel <- #getSelection $ uiLexKwTree appUI
+    #unselectAll kwSel
+
+    opSel <- #getSelection $ uiLexOpTree appUI
+    #unselectAll opSel
+
+    idSel <- #getSelection $ uiLexIdTree appUI
+    #unselectAll idSel
+
+    numSel <- #getSelection $ uiLexNumTree appUI
+    #unselectAll numSel
+
+selectNth :: Gtk.TreeView -> Int -> IO ()
+selectNth treeView n = do
+    mstore <- #getModel treeView
+    case mstore of
+        Just store -> do
+            (exists, nthIter) <- #iterNthChild store Nothing (fromIntegral n)
+            when exists $ do
+                selection <- #getSelection treeView
+                #selectIter selection nthIter
+                path <- #getPath store nthIter
+                #scrollToCell treeView (Just path) (Nothing :: Maybe Gtk.TreeViewColumn) False 0.5 0.5
+        Nothing -> return ()
 
 onLexSelectionChanged :: AppUI -> IO ()
 onLexSelectionChanged appUI = do
@@ -259,11 +324,21 @@ onLexSelectionChanged appUI = do
         lenGV <- #getValue (uiLexStore appUI) iter 3
         len <- fromGValue lenGV :: IO Int64
 
+        tblGV <- #getValue (uiLexStore appUI) iter 4
+        tbl <- fromGValue tblGV :: IO Int64
+
+        indGV <- #getValue (uiLexStore appUI) iter 5
+        ind <- fromGValue indGV :: IO Int64
+
         buffer <- #getBuffer $ uiSourceEdit appUI
         cursor <- #getIterAtLineOffset buffer (fromIntegral line - 1) (fromIntegral pos - 1)
         cursor2 <- #copy cursor
         _ <- #forwardChars cursor2 (fromIntegral len)
         #selectRange buffer cursor cursor2
+
+        let maybeStore = getLexTreeByIndex appUI $ fromIntegral tbl
+        when (isJust maybeStore) (lexUnselectAll appUI)
+        forM_ maybeStore (`selectNth` fromIntegral ind)
 
         _ <- #scrollToIter (uiSourceEdit appUI) cursor 0 True 0.5 0.5
         return ()
