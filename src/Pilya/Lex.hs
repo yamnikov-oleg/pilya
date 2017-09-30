@@ -251,6 +251,7 @@ data ParserError = ParserError
     , errorPos  :: Int
     , errorMsg  :: String
     }
+    deriving (Show)
 
 newParser :: Parser
 newParser = Parser StateFree 1 1 []
