@@ -23,9 +23,6 @@ typeFromToken TokExcl = TypeReal
 typeFromToken TokDollar = TypeBool
 typeFromToken tt = error $ "Token " ++ show tt ++ " does not denote a type"
 
-data Declaration = Declaration [Identifier] Type
-    deriving (Show)
-
 identifier :: Parser Identifier
 identifier = do
     tt <- lookahead
@@ -33,22 +30,22 @@ identifier = do
         TokIdent s -> do { consume; return s }
         _          -> parserError "Expected identifier"
 
-declaration :: Parser Declaration
+declaration :: Parser ([Identifier], Type)
 declaration = do
     expect TokKwDim
     idents <- many1sep (expect TokComma) identifier
     typeTok <- expectAny [TokPercent, TokExcl, TokDollar]
-    return $ Declaration idents (typeFromToken typeTok)
+    return (idents, typeFromToken typeTok)
 
 data Block
-    = BlockDecl Declaration
+    = BlockDecl [Identifier] Type
     | BlockStmt
     deriving (Show)
 
 block :: Parser Block
 block = do
-    decl <- declaration
-    return $ BlockDecl decl
+    (idents, type_) <- declaration
+    return $ BlockDecl idents type_
 
 blockSeparator :: Parser ()
 blockSeparator = do
