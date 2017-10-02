@@ -5,28 +5,8 @@ module Pilya.Syn
     )
     where
 
+import           Data.List (intercalate)
 import           Pilya.Lex (Token (..), TokenType (..))
-
-{-
-
-parseIf :: Parser IfExpr
-parseIf = do
-    token TokIf
-    iterVar <- ident
-    token TokEq
-    fromVal <- parseExpr
-    token TokTo
-    toVal <- parseExpr
-    return $ IfExpr iterVar fromVal toVal
-
-token :: TokenType -> Parser ()
-token tt = do
-    token <- lookahead
-    if tokenType token == tt
-        then consume
-        else parseError "Expected token " ++ show tt
-
--}
 
 newtype ErrorMsg = ErrorMsg String
     deriving (Show)
@@ -77,6 +57,25 @@ consume = Parser runConsume
     where
         runConsume []     = (Left $ ErrorMsg "Unexpected EOF", [])
         runConsume (t:ts) = (Right $ tokenType t, ts)
+
+skip :: Parser ()
+skip = do
+    _ <- consume
+    return ()
+
+expect :: TokenType -> Parser ()
+expect et = do
+    at <- lookahead
+    if at == et
+        then skip
+        else parserError $ "Expected token " ++ show et
+
+expectAny :: [TokenType] -> Parser TokenType
+expectAny tts = do
+    at <- lookahead
+    if at `elem` tts
+        then consume
+        else parserError $ "Expected one of tokens: " ++ intercalate ", " (map show tts)
 
 testParse :: Parser (TokenType, TokenType, TokenType)
 testParse = do
