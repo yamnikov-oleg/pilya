@@ -37,15 +37,41 @@ declaration = do
     typeTok <- expectAny [TokPercent, TokExcl, TokDollar]
     return (idents, typeFromToken typeTok)
 
+data Statement
+    = StmtCompound [Statement]
+    | StmtAssignment Identifier
+    deriving (Show)
+
+assignment :: Parser (Identifier, ())
+assignment = do
+    ident <- identifier
+    expect TokKwAs
+    return (ident, ())
+
+statement :: Parser Statement
+statement = do
+    tt <- lookahead
+    case tt of
+        TokIdent _ -> do
+            (ident, _) <- assignment
+            return $ StmtAssignment ident
+        _ -> parserError $ "Expected statement, found " ++ show tt
+
 data Block
     = BlockDecl [Identifier] Type
-    | BlockStmt
+    | BlockStmt Statement
     deriving (Show)
 
 block :: Parser Block
 block = do
-    (idents, type_) <- declaration
-    return $ BlockDecl idents type_
+    tt <- lookahead
+    case tt of
+        TokKwDim -> do
+            (idents, type_) <- declaration
+            return $ BlockDecl idents type_
+        _ -> do
+            stmt <- statement
+            return $ BlockStmt stmt
 
 blockSeparator :: Parser ()
 blockSeparator = do
