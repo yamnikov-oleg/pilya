@@ -11,6 +11,7 @@ module Pilya.Parcomb
     , many0
     , many1
     , many0sep
+    , many1sep
     , suffixed
     , ParserError (..)
     , parse
@@ -18,6 +19,8 @@ module Pilya.Parcomb
 
 import           Data.List (intercalate)
 import           Pilya.Lex (Token (..), TokenType (..))
+
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
 newtype ErrorMsg = ErrorMsg String
     deriving (Show)
@@ -117,6 +120,12 @@ many0sep sep p = do
         Right x -> do
             xs <- many0sep' sep p
             return $ x:xs
+
+many1sep :: Parser () -> Parser a -> Parser [a]
+many1sep sep p = do
+    x <- p
+    xs <- many0sep' sep p
+    return $ x:xs
 
 many0sep' :: Parser () -> Parser a -> Parser [a]
 many0sep' sep p = do

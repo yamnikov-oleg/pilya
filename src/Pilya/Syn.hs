@@ -6,8 +6,7 @@ module Pilya.Syn
 
 import           Pilya.Lex     (Token (..), TokenType (..))
 import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
-                                expectAny, lookahead, many1, parserError,
-                                suffixed)
+                                expectAny, lookahead, many1sep, parserError)
 import qualified Pilya.Parcomb as Parcomb
 
 type Identifier = String
@@ -37,9 +36,9 @@ identifier = do
 declaration :: Parser Declaration
 declaration = do
     expect TokKwDim
-    ident <- identifier
+    idents <- many1sep (expect TokComma) identifier
     typeTok <- expectAny [TokPercent, TokExcl, TokDollar]
-    return $ Declaration [ident] (typeFromToken typeTok)
+    return $ Declaration idents (typeFromToken typeTok)
 
 data Block
     = BlockDecl Declaration
