@@ -59,9 +59,20 @@ blockSeparator = do
 newtype Program = Program [Block]
     deriving (Show)
 
+blocks :: Parser [Block]
+blocks = do
+    tt <- lookahead
+    if tt == TokKwEnd
+        then return []
+        else do
+            b <- block
+            blockSeparator
+            bs <- blocks
+            return $ b:bs
+
 program :: Parser Program
 program = do
-    bs <- many1 $ suffixed block blockSeparator
+    bs <- blocks
     expect TokKwEnd
     return $ Program bs
 
