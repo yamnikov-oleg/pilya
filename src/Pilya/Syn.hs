@@ -1,5 +1,6 @@
 module Pilya.Syn
     ( ErrorMsg
+    , ParserError (..)
     , parse
     )
     where
@@ -84,5 +85,19 @@ testParse = do
     t3 <- consume
     return (t1, t2, t3)
 
-parse :: [Token] -> Either ErrorMsg (TokenType, TokenType, TokenType)
-parse tokens = fst $ runParser testParse tokens
+data ParserError = ParserError
+    { errorMsg  :: ErrorMsg
+    , errorLine :: Int
+    , errorPos  :: Int
+    }
+
+parse :: [Token] -> Either ParserError (TokenType, TokenType, TokenType)
+parse tokens = case parseResult of
+    (Left msg, [])  -> Left $ ParserError msg lastLine lastPos
+    (Left msg, t:_) -> Left $ ParserError msg (tokenLine t) (tokenPos t)
+    (Right val, _)  -> Right val
+    where
+        parseResult = runParser testParse tokens
+        (lastLine, lastPos) = case tokens of
+            [] -> (1, 1)
+            t -> let lt = last t in (tokenLine lt, tokenPos lt + tokenLength lt)
