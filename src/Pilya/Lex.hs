@@ -378,7 +378,7 @@ advance' (StateExpVal mant sign buf tokpos) line pos char
     | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
         case bufDouble of
             Just dbl ->
-                AdvToken StateFree (Token (TokReal dbl) line tokpos (pos-tokpos))
+                AdvNotConsumedToken StateFree (Token (TokReal dbl) line tokpos (pos-tokpos))
             Nothing ->
                 AdvError $ ParserError line tokpos "Real number has incorrect format"
     | otherwise =
