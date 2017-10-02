@@ -6,7 +6,8 @@ module Pilya.Syn
 
 import           Pilya.Lex     (Token (..), TokenType (..))
 import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
-                                expectAny, lookahead, many1sep, parserError)
+                                expectAny, lookahead, many1sep, parserError,
+                                skip)
 import qualified Pilya.Parcomb as Parcomb
 
 type Identifier = String
@@ -37,24 +38,84 @@ declaration = do
     typeTok <- expectAny [TokPercent, TokExcl, TokDollar]
     return (idents, typeFromToken typeTok)
 
-data Statement
-    = StmtCompound [Statement]
-    | StmtAssignment Identifier
+data NumberLiteral
+    = NumInteger Integer
+    | NumReal Double
     deriving (Show)
 
-assignment :: Parser (Identifier, ())
+numberLiteral :: Parser NumberLiteral
+numberLiteral = do
+    tt <- lookahead
+    case tt of
+        TokInteger int -> do
+            skip
+            return $ NumInteger int
+        TokReal dbl -> do
+            skip
+            return $ NumReal dbl
+        _ -> parserError $ "Expected number, got " ++ show tt
+
+data BoolLiteral = BoolTrue | BoolFalse deriving (Show)
+
+boolLiteral :: Parser BoolLiteral
+boolLiteral = do
+    tt <- lookahead
+    case tt of
+        TokKwTrue -> do
+            skip
+            return BoolTrue
+        TokKwFalse -> do
+            skip
+            return BoolFalse
+        _ -> parserError $ "Expected boolean, got " ++ show tt
+
+data Multiplier
+    = MultIdent Identifier
+    | MultNumber NumberLiteral
+    | MultBool BoolLiteral
+    | MultNot Multiplier
+    deriving (Show)
+
+multiplier :: Parser Multiplier
+multiplier = do
+    tt <- lookahead
+    case tt of
+        TokIdent s -> do
+            skip
+            return $ MultIdent s
+        TokInteger _ ->
+            fmap MultNumber numberLiteral
+        TokReal _ ->
+            fmap MultNumber numberLiteral
+        TokKwTrue ->
+            fmap MultBool boolLiteral
+        TokKwFalse ->
+            fmap MultBool boolLiteral
+        TokKwNot -> do
+            skip
+            fmap MultNot multiplier
+        _ -> parserError $ "Expected multiplier, got " ++ show tt
+
+
+data Statement
+    = StmtCompound [Statement]
+    | StmtAssignment Identifier Multiplier
+    deriving (Show)
+
+assignment :: Parser (Identifier, Multiplier)
 assignment = do
     ident <- identifier
     expect TokKwAs
-    return (ident, ())
+    mult <- multiplier
+    return (ident, mult)
 
 statement :: Parser Statement
 statement = do
     tt <- lookahead
     case tt of
         TokIdent _ -> do
-            (ident, _) <- assignment
-            return $ StmtAssignment ident
+            (ident, mult) <- assignment
+            return $ StmtAssignment ident mult
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block
