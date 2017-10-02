@@ -7,7 +7,7 @@ module Pilya.Syn
 import           Pilya.Lex     (Token (..), TokenType (..))
 import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
                                 expectAny, lookahead, many1sep, parserError,
-                                skip)
+                                skip, tryParse)
 import qualified Pilya.Parcomb as Parcomb
 
 type Identifier = String
@@ -96,17 +96,50 @@ multiplier = do
             fmap MultNot multiplier
         _ -> parserError $ "Expected multiplier, got " ++ show tt
 
+data MultOperation
+    = MultOpMult -- *
+    | MultOpDiv  -- /
+    | MultOpAnd  -- and
+    deriving (Show)
+
+multOperation :: Parser MultOperation
+multOperation = do
+    tt <- expectAny [TokMult, TokDiv, TokKwAnd]
+    case tt of
+        TokMult  -> return MultOpMult
+        TokDiv   -> return MultOpDiv
+        TokKwAnd -> return MultOpAnd
+
+data Multiplication
+    = Multiplication Multiplier [(MultOperation, Multiplier)]
+    deriving (Show)
+
+multiplication :: Parser Multiplication
+multiplication = do
+    m <- multiplier
+    ms <- multiplication'
+    return $ Multiplication m ms
+
+multiplication' :: Parser [(MultOperation, Multiplier)]
+multiplication' = do
+    res <- tryParse multOperation
+    case res of
+        Left _ -> return []
+        Right op -> do
+            mult <- multiplier
+            pairs <- multiplication'
+            return $ (op, mult):pairs
 
 data Statement
     = StmtCompound [Statement]
-    | StmtAssignment Identifier Multiplier
+    | StmtAssignment Identifier Multiplication
     deriving (Show)
 
-assignment :: Parser (Identifier, Multiplier)
+assignment :: Parser (Identifier, Multiplication)
 assignment = do
     ident <- identifier
     expect TokKwAs
-    mult <- multiplier
+    mult <- multiplication
     return (ident, mult)
 
 statement :: Parser Statement
