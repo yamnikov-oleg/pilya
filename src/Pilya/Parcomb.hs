@@ -7,6 +7,11 @@ module Pilya.Parcomb
     , skip
     , expect
     , expectAny
+    , tryParse
+    , many0
+    , many1
+    , many0sep
+    , suffixed
     , ParserError (..)
     , parse
     ) where
@@ -82,6 +87,52 @@ expectAny tts = do
     if at `elem` tts
         then consume
         else parserError $ "Expected one of tokens: " ++ intercalate ", " (map show tts)
+
+tryParse :: Parser a -> Parser (Either ErrorMsg a)
+tryParse parser = Parser (\tokens ->
+    case runParser parser tokens of
+        (Left msg, _)   -> (Right $ Left msg, tokens)
+        (Right x, rest) -> (Right $ Right x, rest))
+
+many0 :: Parser a -> Parser [a]
+many0 p = do
+    res <- tryParse p
+    case res of
+        Left _ -> return []
+        Right x -> do
+            xs <- many0 p
+            return $ x:xs
+
+many1 :: Parser a -> Parser [a]
+many1 p = do
+    x <- p
+    xs <- many0 p
+    return $ x:xs
+
+many0sep :: Parser () -> Parser a -> Parser [a]
+many0sep sep p = do
+    res <- tryParse p
+    case res of
+        Left _ -> return []
+        Right x -> do
+            xs <- many0sep' sep p
+            return $ x:xs
+
+many0sep' :: Parser () -> Parser a -> Parser [a]
+many0sep' sep p = do
+    res <- tryParse sep
+    case res of
+        Left _ -> return []
+        Right _ -> do
+            x <- p
+            xs <- many0sep' sep p
+            return $ x:xs
+
+suffixed :: Parser a -> Parser b -> Parser a
+suffixed pa pb = do
+    xa <- pa
+    _ <- pb
+    return xa
 
 data ParserError = ParserError
     { errorMsg  :: ErrorMsg

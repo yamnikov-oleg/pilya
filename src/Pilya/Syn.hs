@@ -6,7 +6,8 @@ module Pilya.Syn
 
 import           Pilya.Lex     (Token (..), TokenType (..))
 import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
-                                expectAny, lookahead, parserError)
+                                expectAny, lookahead, many1, parserError,
+                                suffixed)
 import qualified Pilya.Parcomb as Parcomb
 
 type Identifier = String
@@ -50,14 +51,19 @@ block = do
     decl <- declaration
     return $ BlockDecl decl
 
+blockSeparator :: Parser ()
+blockSeparator = do
+    _ <- expectAny [TokSemicolon, TokNewline]
+    return ()
+
 newtype Program = Program [Block]
     deriving (Show)
 
 program :: Parser Program
 program = do
-    b <- block
+    bs <- many1 $ suffixed block blockSeparator
     expect TokKwEnd
-    return $ Program [b]
+    return $ Program bs
 
 parse :: [Token] -> Either ParserError Program
 parse = Parcomb.parse program
