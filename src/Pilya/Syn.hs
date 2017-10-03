@@ -164,25 +164,65 @@ summation' = do
             pairs <- summation'
             return $ (op, mult):pairs
 
-data Statement
-    = StmtCompound [Statement]
-    | StmtAssignment Identifier Summation
+data LogOperation
+    = LogNeq
+    | LogEq
+    | LogLt
+    | LogLte
+    | LogGt
+    | LogGte
     deriving (Show)
 
-assignment :: Parser (Identifier, Summation)
+logOperation :: Parser LogOperation
+logOperation = do
+    tt <- expectAny [TokNeq, TokEq, TokLt, TokLte, TokGt, TokGte]
+    case tt of
+        TokNeq -> return LogNeq
+        TokEq  -> return LogEq
+        TokLt  -> return LogLt
+        TokLte -> return LogLte
+        TokGt  -> return LogGt
+        TokGte -> return LogGte
+
+data Expression
+    = Expression Summation [(LogOperation, Summation)]
+    deriving (Show)
+
+expression :: Parser Expression
+expression = do
+    sm <- summation
+    sms <- expression'
+    return $ Expression sm sms
+
+expression' :: Parser [(LogOperation, Summation)]
+expression' = do
+    res <- tryParse logOperation
+    case res of
+        Left _ -> return []
+        Right op -> do
+            sm <- summation
+            pairs <- expression'
+            return $ (op, sm):pairs
+
+data Statement
+    = StmtCompound [Statement]
+    | StmtAssignment Identifier Expression
+    deriving (Show)
+
+assignment :: Parser (Identifier, Expression)
 assignment = do
     ident <- identifier
     expect TokKwAs
-    sm <- summation
-    return (ident, sm)
+    expr <- expression
+    return (ident, expr)
 
 statement :: Parser Statement
 statement = do
     tt <- lookahead
     case tt of
         TokIdent _ -> do
-            (ident, sm) <- assignment
-            return $ StmtAssignment ident sm
+            (ident, expr) <- assignment
+            return $ StmtAssignment ident expr
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block
