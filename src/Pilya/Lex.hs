@@ -29,6 +29,7 @@ import           Control.Applicative ((<$>))
 import           Control.Monad       (foldM)
 import           Data.Char           (isDigit, isLetter)
 import           Data.List           (elemIndex)
+import           Data.List.Split     (splitOneOf)
 import           Data.Maybe          (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Text           (Text)
 import qualified Data.Text           as T
@@ -238,6 +239,18 @@ parseInt str
     | otherwise =
         readBase 10 (reverse str)
 
+-- |Parses a double without fractional part but with exponent.
+-- This case requires a special function because real number with exponent
+-- and no frac. part looks indistinguishable from hex number to the parser.
+parseWeirdDouble :: String -> Maybe Double
+parseWeirdDouble str =
+    case splitOneOf "eE" str of
+        [wholeS, expS] -> do
+            whole <- readMaybe wholeS :: Maybe Double
+            expVal <- readMaybe expS :: Maybe Int
+            return $ whole * 10^^expVal
+        _ -> Nothing
+
 data Parser = Parser
     { parserState      :: ParserState
     , parserLine       :: Int
@@ -332,11 +345,14 @@ advance' (StateInt buf tokpos) line _ char
     | otherwise =
         case parseInt buf of
             Just num -> AdvNotConsumedToken StateFree (token num)
-            Nothing  -> AdvError $ ParserError line tokpos "Integer has incorrent format"
+            Nothing  -> case parseWeirdDouble buf of
+                Just dbl -> AdvNotConsumedToken StateFree (dblToken dbl)
+                Nothing -> AdvError $ ParserError line tokpos "Integer has incorrect format"
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
         token num = Token (TokInteger $ fromIntegral num) line tokpos (length buf)
+        dblToken dbl = Token (TokReal dbl) line tokpos (length buf)
 advance' (StateFrac whole buf tokpos) line pos char
     | ct == Just CharDigit =
         AdvNoToken (StateFrac whole newBuf tokpos)
