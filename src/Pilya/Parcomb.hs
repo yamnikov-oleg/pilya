@@ -13,12 +13,15 @@ module Pilya.Parcomb
     , many0sep
     , many1sep
     , suffixed
+    , trace
+    , traceStack
     , ParserError (..)
     , parse
     ) where
 
-import           Data.List (intercalate)
-import           Pilya.Lex (Token (..), TokenType (..))
+import           Data.List   (intercalate)
+import qualified Debug.Trace as Dbg
+import           Pilya.Lex   (Token (..), TokenType (..))
 
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
@@ -142,6 +145,14 @@ suffixed pa pb = do
     xa <- pa
     _ <- pb
     return xa
+
+trace :: String -> Parser a -> Parser a
+trace msg p = Parser (\tokens ->
+    Dbg.trace (msg ++ show (take 1 tokens)) (runParser p tokens))
+
+traceStack :: String -> Parser a -> Parser a
+traceStack msg p = Parser (\tokens ->
+    Dbg.traceStack (msg ++ show (take 1 tokens)) (runParser p tokens))
 
 data ParserError = ParserError
     { errorMsg  :: ErrorMsg
