@@ -130,25 +130,59 @@ multiplication' = do
             pairs <- multiplication'
             return $ (op, mult):pairs
 
-data Statement
-    = StmtCompound [Statement]
-    | StmtAssignment Identifier Multiplication
+data SumOperation
+    = SumPlus
+    | SumMinus
+    | SumOr
     deriving (Show)
 
-assignment :: Parser (Identifier, Multiplication)
+sumOperation :: Parser SumOperation
+sumOperation = do
+    tt <- expectAny [TokPlus, TokMinus, TokKwOr]
+    case tt of
+        TokPlus  -> return SumPlus
+        TokMinus -> return SumMinus
+        TokKwOr  -> return SumOr
+
+data Summation
+    = Summation Multiplication [(SumOperation, Multiplication)]
+    deriving (Show)
+
+summation :: Parser Summation
+summation = do
+    m <- multiplication
+    ms <- summation'
+    return $ Summation m ms
+
+summation' :: Parser [(SumOperation, Multiplication)]
+summation' = do
+    res <- tryParse sumOperation
+    case res of
+        Left _ -> return []
+        Right op -> do
+            mult <- multiplication
+            pairs <- summation'
+            return $ (op, mult):pairs
+
+data Statement
+    = StmtCompound [Statement]
+    | StmtAssignment Identifier Summation
+    deriving (Show)
+
+assignment :: Parser (Identifier, Summation)
 assignment = do
     ident <- identifier
     expect TokKwAs
-    mult <- multiplication
-    return (ident, mult)
+    sm <- summation
+    return (ident, sm)
 
 statement :: Parser Statement
 statement = do
     tt <- lookahead
     case tt of
         TokIdent _ -> do
-            (ident, mult) <- assignment
-            return $ StmtAssignment ident mult
+            (ident, sm) <- assignment
+            return $ StmtAssignment ident sm
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block
