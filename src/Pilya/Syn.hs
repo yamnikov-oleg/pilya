@@ -17,11 +17,19 @@ module Pilya.Syn
     )
     where
 
+import           Control.Monad (when)
 import           Pilya.Lex     (Token (..), TokenType (..))
 import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
                                 expectAny, lookahead, many1sep, parserError,
                                 skip, tryParse)
 import qualified Pilya.Parcomb as Parcomb
+
+newlines :: Parser ()
+newlines = do
+    tt <- lookahead
+    when (tt == TokNewline) $ do
+        skip
+        newlines
 
 type Identifier = String
 
@@ -222,6 +230,32 @@ data Statement
     | StmtAssignment Identifier Expression
     deriving (Show)
 
+compound' :: Parser [Statement]
+compound' = do
+    stmt <- statement
+    tt <- expectAny [TokBracketClose, TokSemicolon, TokNewline]
+    case tt of
+        TokBracketClose -> return [stmt]
+        TokSemicolon -> do
+            stmts <- compound'
+            return (stmt:stmts)
+        TokNewline -> do
+            newlines
+            tt <- lookahead
+            case tt of
+                TokBracketClose -> do
+                    skip
+                    return [stmt]
+                _ -> do
+                    stmts <- compound'
+                    return (stmt:stmts)
+
+compound :: Parser [Statement]
+compound = do
+    expect TokBracketOpen
+    newlines
+    compound'
+
 assignment :: Parser (Identifier, Expression)
 assignment = do
     ident <- identifier
@@ -233,6 +267,9 @@ statement :: Parser Statement
 statement = do
     tt <- lookahead
     case tt of
+        TokBracketOpen -> do
+            stmts <- compound
+            return $ StmtCompound stmts
         TokIdent _ -> do
             (ident, expr) <- assignment
             return $ StmtAssignment ident expr
