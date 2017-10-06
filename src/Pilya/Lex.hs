@@ -163,7 +163,9 @@ data CharType
     | CharNewline    -- \n
     | CharDigit      -- 0-9
     | CharLetter     -- a-z, A-Z
-    | CharSpecial    -- special symbols: comma, period and so on
+    | CharGrouper    -- () and []
+    | CharDelimeter  -- : and ,
+    | CharSpecial    -- special symbols: plus, minus and so on
     | CharOther
     deriving (Eq)
 
@@ -175,8 +177,22 @@ charType ch
     | ch == '\n' = CharNewline
     | isDigit ch = CharDigit
     | isLetter ch = CharLetter
-    | ch `elem` ":<>=+-*/()%!$[].,{}" = CharSpecial
+    | ch `elem` "()[]" = CharGrouper
+    | ch `elem` ":," = CharDelimeter
+    | ch `elem` "<>=+-*/%!${}" = CharSpecial
     | otherwise = CharOther
+
+grouper :: Char -> TokenType
+grouper '(' = TokParenthesisOpen
+grouper ')' = TokParenthesisClose
+grouper '[' = TokBracketOpen
+grouper ']' = TokBracketClose
+grouper c   = error $ show c ++ " is not a grouper char"
+
+delimeter :: Char -> TokenType
+delimeter ':' = TokSemicolon
+delimeter ',' = TokComma
+delimeter c   = error $ show c ++ " is not a delimeter char"
 
 data Sign = SignPos | SignNeg
 
@@ -312,6 +328,10 @@ advance' StateFree line pos char
         AdvNoToken (StateInt [fromJust char] pos)
     | char == Just '.' =
         AdvNoToken (StateFrac 0 "" pos)
+    | ct == Just CharGrouper =
+        AdvToken StateFree (Token (grouper $ fromJust char) line pos 1)
+    | ct == Just CharDelimeter =
+        AdvToken StateFree (Token (delimeter $ fromJust char) line pos 1)
     | ct == Just CharSpecial =
         AdvNoToken (StateOperator [fromJust char] pos)
     | isNothing char =
