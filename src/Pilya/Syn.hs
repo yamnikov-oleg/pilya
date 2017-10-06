@@ -283,14 +283,14 @@ condition = do
     newlines
     expect TokKwThen
     thenBranch <- statement
-    newlines
-    tt <- lookahead
-    maybeElseBranch <- if tt == TokKwElse
-        then do
-            skip
+    res <- tryParse $ do
+        newlines
+        expect TokKwElse
+    maybeElseBranch <- case res of
+        Right _ -> do
             elseBranch <- statement
             return $ Just elseBranch
-        else
+        Left _ ->
             return Nothing
     return (expr, thenBranch, maybeElseBranch)
 
