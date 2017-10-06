@@ -24,6 +24,8 @@ import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
                                 skip, tryParse)
 import qualified Pilya.Parcomb as Parcomb
 
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
+
 newlines :: Parser ()
 newlines = do
     tt <- lookahead
@@ -231,6 +233,7 @@ data Statement
     | StmtCondition Expression Statement (Maybe Statement)
     | StmtForLoop Identifier Expression Expression Statement
     | StmtWhileLoop Expression Statement
+    | StmtRead [Identifier]
     deriving (Show)
 
 compound' :: Parser [Statement]
@@ -302,6 +305,25 @@ whileLoop = do
     body <- statement
     return (expr, body)
 
+readStmt' :: Parser [Identifier]
+readStmt' = do
+    tt <- expectAny [TokParenthesisClose, TokComma]
+    case tt of
+        TokParenthesisClose ->
+            return []
+        TokComma -> do
+            ident <- identifier
+            idents <- readStmt'
+            return (ident:idents)
+
+readStmt :: Parser [Identifier]
+readStmt = do
+    expect TokKwRead
+    expect TokParenthesisOpen
+    ident <- identifier
+    idents <- readStmt'
+    return (ident:idents)
+
 statement :: Parser Statement
 statement = do
     tt <- lookahead
@@ -321,6 +343,9 @@ statement = do
         TokKwWhile -> do
             (expr, body) <- whileLoop
             return $ StmtWhileLoop expr body
+        TokKwRead -> do
+            idents <- readStmt
+            return $ StmtRead idents
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block

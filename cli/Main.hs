@@ -85,6 +85,9 @@ synPrintStatement indent (Syn.StmtWhileLoop expr body) = do
     printIndented indent "StmtWhileLoop"
     synPrintExpr (indent + 1) expr
     synPrintStatement (indent + 1) body
+synPrintStatement indent (Syn.StmtRead idents) = do
+    printIndented indent "StmtRead"
+    forM_ idents $ printIndented (indent + 1)
 
 synPrintBlock :: Int -> Syn.Block -> IO ()
 synPrintBlock indent (Syn.BlockDecl idents typ) =
