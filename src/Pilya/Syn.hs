@@ -230,6 +230,7 @@ data Statement
     | StmtAssignment Identifier Expression
     | StmtCondition Expression Statement (Maybe Statement)
     | StmtForLoop Identifier Expression Expression Statement
+    | StmtWhileLoop Expression Statement
     deriving (Show)
 
 compound' :: Parser [Statement]
@@ -293,6 +294,14 @@ forLoop = do
     body <- statement
     return (ident, initExpr, targetExpr, body)
 
+whileLoop :: Parser (Expression, Statement)
+whileLoop = do
+    expect TokKwWhile
+    expr <- expression
+    expect TokKwDo
+    body <- statement
+    return (expr, body)
+
 statement :: Parser Statement
 statement = do
     tt <- lookahead
@@ -309,6 +318,9 @@ statement = do
         TokKwFor -> do
             (ident, initExpr, targetExpr, body) <- forLoop
             return $ StmtForLoop ident initExpr targetExpr body
+        TokKwWhile -> do
+            (expr, body) <- whileLoop
+            return $ StmtWhileLoop expr body
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block
