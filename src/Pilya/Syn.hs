@@ -234,6 +234,7 @@ data Statement
     | StmtForLoop Identifier Expression Expression Statement
     | StmtWhileLoop Expression Statement
     | StmtRead [Identifier]
+    | StmtWrite [Expression]
     deriving (Show)
 
 compound' :: Parser [Statement]
@@ -324,6 +325,25 @@ readStmt = do
     idents <- readStmt'
     return (ident:idents)
 
+writeStmt' :: Parser [Expression]
+writeStmt' = do
+    tt <- expectAny [TokParenthesisClose, TokComma]
+    case tt of
+        TokParenthesisClose ->
+            return []
+        TokComma -> do
+            expr <- expression
+            exprs <- writeStmt'
+            return (expr:exprs)
+
+writeStmt :: Parser [Expression]
+writeStmt = do
+    expect TokKwWrite
+    expect TokParenthesisOpen
+    expr <- expression
+    exprs <- writeStmt'
+    return (expr:exprs)
+
 statement :: Parser Statement
 statement = do
     tt <- lookahead
@@ -346,6 +366,9 @@ statement = do
         TokKwRead -> do
             idents <- readStmt
             return $ StmtRead idents
+        TokKwWrite -> do
+            exprs <- writeStmt
+            return $ StmtWrite exprs
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block
