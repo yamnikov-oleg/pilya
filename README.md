@@ -7,7 +7,9 @@ Currently only the tokenizer is implemented.
 ```
 $ git clone https://github.com/yamnikov-oleg/pilya && cd pilya
 $ stack build
-$ stack exec pilya -- example.pilya
+$ stack exec pilya-gui
+$ stack exec pilya-cli -- lex example.pilya
+$ stack exec pilya-cli -- syn example.pilya
 ```
 
 ## Example of syntax
