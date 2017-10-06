@@ -33,6 +33,9 @@ synPrintMultiplier indent (Syn.MultBool bool) =
 synPrintMultiplier indent (Syn.MultNot mulr) = do
     printIndented indent "MultNot"
     synPrintMultiplier (indent+1) mulr
+synPrintMultiplier indent (Syn.MultGrouped expr) = do
+    printIndented indent "MultGrouped"
+    synPrintExpr (indent + 1) expr
 
 synPrintSumOpPair :: Int -> (Syn.SumOperation, Syn.Multiplication) -> IO ()
 synPrintSumOpPair indent (op, multn) = do

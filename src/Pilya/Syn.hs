@@ -97,6 +97,7 @@ data Multiplier
     | MultNumber NumberLiteral
     | MultBool BoolLiteral
     | MultNot Multiplier
+    | MultGrouped Expression
     deriving (Show)
 
 multiplier :: Parser Multiplier
@@ -117,6 +118,11 @@ multiplier = do
         TokKwNot -> do
             skip
             fmap MultNot multiplier
+        TokParenthesisOpen -> do
+            skip
+            expr <- expression
+            expect TokParenthesisClose
+            return $ MultGrouped expr
         _ -> parserError $ "Expected multiplier, got " ++ show tt
 
 data MultOperation
