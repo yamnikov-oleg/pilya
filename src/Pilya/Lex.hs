@@ -361,7 +361,7 @@ advance' (StateInt buf tokpos) line _ char
     | char == Just '.' =
         case readBase 10 $ reverse buf of
             Just num -> AdvNoToken (StateFrac num "" tokpos)
-            Nothing  -> AdvError $ ParserError line tokpos "Real number has incorrect format"
+            Nothing  -> AdvError $ ParserError line tokpos "Whole part of real number has incorrect format"
     | otherwise =
         case parseInt buf of
             Just num -> AdvNotConsumedToken StateFree (token num)
@@ -381,15 +381,13 @@ advance' (StateFrac whole buf tokpos) line pos char
             Just double ->
                 AdvNoToken (StateExpSign double tokpos)
             Nothing ->
-                AdvError $ ParserError line tokpos "Real number has incorrect format"
-    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
+                AdvError $ ParserError line tokpos "Fractional part of real number has incorrect format"
+    | otherwise =
         case bufDouble of
             Just double ->
                 AdvNotConsumedToken StateFree (Token (TokReal double) line tokpos (pos-tokpos))
             Nothing ->
-                AdvError $ ParserError line tokpos "Real number has incorrect format"
-    | otherwise =
-        AdvError $ ParserError line tokpos "Real number has incorrect format"
+                AdvError $ ParserError line tokpos "Fractional part of real number has incorrect format"
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
@@ -405,20 +403,18 @@ advance' (StateExpSign mant tokpos) line _ char
     | ct == Just CharDigit =
         AdvNotConsumed (StateExpVal mant SignPos "" tokpos)
     | otherwise =
-        AdvError $ ParserError line tokpos "Real number has incorrect format"
+        AdvError $ ParserError line tokpos "Unexpected character while reading exponent value"
     where
         ct = fmap charType char
 advance' (StateExpVal mant sign buf tokpos) line pos char
     | ct == Just CharDigit =
         AdvNoToken (StateExpVal mant sign newBuf tokpos)
-    | maybe False (`elem` [CharWhitespace, CharNewline, CharSpecial]) ct || isNothing char =
+    | otherwise =
         case bufDouble of
             Just dbl ->
                 AdvNotConsumedToken StateFree (Token (TokReal dbl) line tokpos (pos-tokpos))
             Nothing ->
-                AdvError $ ParserError line tokpos "Real number has incorrect format"
-    | otherwise =
-        AdvError $ ParserError line tokpos "Real number has incorrect format"
+                AdvError $ ParserError line tokpos "Exponent value has incorrect format"
     where
         ct = fmap charType char
         newBuf = fromJust char : buf
