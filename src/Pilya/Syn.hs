@@ -228,6 +228,7 @@ expression' = do
 data Statement
     = StmtCompound [Statement]
     | StmtAssignment Identifier Expression
+    | StmtCondition Expression Statement (Maybe Statement)
     deriving (Show)
 
 compound' :: Parser [Statement]
@@ -263,6 +264,24 @@ assignment = do
     expr <- expression
     return (ident, expr)
 
+condition :: Parser (Expression, Statement, Maybe Statement)
+condition = do
+    expect TokKwIf
+    expr <- expression
+    newlines
+    expect TokKwThen
+    thenBranch <- statement
+    newlines
+    tt <- lookahead
+    maybeElseBranch <- if tt == TokKwElse
+        then do
+            skip
+            elseBranch <- statement
+            return $ Just elseBranch
+        else
+            return Nothing
+    return (expr, thenBranch, maybeElseBranch)
+
 statement :: Parser Statement
 statement = do
     tt <- lookahead
@@ -273,6 +292,9 @@ statement = do
         TokIdent _ -> do
             (ident, expr) <- assignment
             return $ StmtAssignment ident expr
+        TokKwIf -> do
+            (expr, thenBranch, maybeElseBranch) <- condition
+            return $ StmtCondition expr thenBranch maybeElseBranch
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block

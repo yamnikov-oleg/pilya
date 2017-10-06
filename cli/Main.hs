@@ -69,6 +69,13 @@ synPrintStatement indent (Syn.StmtCompound stmts) = do
 synPrintStatement indent (Syn.StmtAssignment ident expr) = do
     printIndented indent $ "StmtAssignment " ++ ident
     synPrintExpr (indent + 1) expr
+synPrintStatement indent (Syn.StmtCondition expr thenBranch maybeElseBranch) = do
+    printIndented indent "StmtCondition"
+    synPrintExpr (indent + 1) expr
+    synPrintStatement (indent + 1) thenBranch
+    case maybeElseBranch of
+        Just elseBranch -> synPrintStatement (indent + 1) elseBranch
+        Nothing         -> return ()
 
 synPrintBlock :: Int -> Syn.Block -> IO ()
 synPrintBlock indent (Syn.BlockDecl idents typ) =
