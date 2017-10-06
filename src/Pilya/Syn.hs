@@ -1,5 +1,18 @@
 module Pilya.Syn
-    ( parse
+    ( Type (..)
+    , NumberLiteral (..)
+    , BoolLiteral (..)
+    , Multiplier (..)
+    , MultOperation (..)
+    , Multiplication (..)
+    , SumOperation (..)
+    , Summation (..)
+    , LogOperation (..)
+    , Expression (..)
+    , Statement (..)
+    , Block (..)
+    , Program (..)
+    , parse
     , ParserError (..)
     )
     where
