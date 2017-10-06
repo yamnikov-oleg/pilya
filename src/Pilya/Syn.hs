@@ -329,6 +329,7 @@ blocks = do
         else do
             b <- block
             blockSeparator
+            newlines
             bs <- blocks
             return $ b:bs
 
