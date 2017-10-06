@@ -97,7 +97,7 @@ synPrintStatement indent (Syn.StmtWrite exprs) = do
 
 synPrintBlock :: Int -> Syn.Block -> IO ()
 synPrintBlock indent (Syn.BlockDecl idents typ) =
-    printIndented indent $ "BlockDecl " ++ show idents ++ show typ
+    printIndented indent $ "BlockDecl " ++ show idents ++ " " ++ show typ
 synPrintBlock indent (Syn.BlockStmt stmt) = do
     printIndented indent "BlockStmt"
     synPrintStatement (indent + 1) stmt
