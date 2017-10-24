@@ -336,6 +336,8 @@ advance' StateFree line pos char
         AdvNoToken (StateOperator [fromJust char] pos)
     | isNothing char =
         AdvNoToken StateFree
+    | otherwise =
+        AdvError $ ParserError line pos $ "Unexpected symbol '" ++ show char ++ "'"
     where
         ct = fmap charType char
 advance' StateComment line pos char
