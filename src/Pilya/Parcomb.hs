@@ -1,5 +1,5 @@
 module Pilya.Parcomb
-    ( ErrorMsg
+    ( ErrorMsg (..)
     , Parser (..)
     , parserError
     , lookahead

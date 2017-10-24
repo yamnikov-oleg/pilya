@@ -14,14 +14,15 @@ module Pilya.Syn
     , Program (..)
     , parse
     , ParserError (..)
+    , ErrorMsg (..)
     )
     where
 
 import           Control.Monad (when)
 import           Pilya.Lex     (Token (..), TokenType (..))
-import           Pilya.Parcomb (Parser (..), ParserError (..), consume, expect,
-                                expectAny, lookahead, many1sep, parserError,
-                                skip, tryParse)
+import           Pilya.Parcomb (ErrorMsg (..), Parser (..), ParserError (..),
+                                consume, expect, expectAny, lookahead, many1sep,
+                                parserError, skip, tryParse)
 import qualified Pilya.Parcomb as Parcomb
 
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
