@@ -35,6 +35,7 @@ data AppUI = AppUI
     , uiLexSelection :: Gtk.TreeSelection
     , uiLexButton    :: Gtk.Button
     , uiSynStore     :: Gtk.TreeStore
+    , uiSynSelection :: Gtk.TreeSelection
     , uiSynButton    :: Gtk.Button
     }
 
@@ -205,16 +206,18 @@ buildUI = do
 
     (synOutputScroll, synTreeView, synStore) <- buildTreeView
         [ (Just "Name", gtypeString)
-        , (Just "Sl", gtypeInt64)
-        , (Just "Sp", gtypeInt64)
-        , (Just "El", gtypeInt64)
-        , (Just "Ep", gtypeInt64)
+        , (Nothing, gtypeInt64)
+        , (Nothing, gtypeInt64)
+        , (Nothing, gtypeInt64)
+        , (Nothing, gtypeInt64)
+        , (Just "Pos", gtypeString)
         ]
     set lexOutputScroll
         [ #hexpand := True
         , #vexpand := True
         ]
     #packStart synTabContainer synOutputScroll True True 0
+    synSelection <- #getSelection synTreeView
 
     synButton <- new Gtk.Button
         [ #label := "Parse into AST"
@@ -238,6 +241,7 @@ buildUI = do
         , uiLexSelection = lexSelection
         , uiLexButton = lexButton
         , uiSynStore = synStore
+        , uiSynSelection = synSelection
         , uiSynButton = synButton
         }
 
@@ -403,7 +407,8 @@ synDisplayNode :: Syn.Node String -> (Gtk.TreeStore, Maybe Gtk.TreeIter) -> IO (
 synDisplayNode (Syn.Node text start end) (store, piter) = do
     let Syn.Cursor startLine startPos = start
     let Syn.Cursor endLine endPos = end
-    iter <- treeStoreAppend store piter (text, startLine, startPos, endLine, endPos)
+    let posStr = show startLine ++ "," ++ show startPos ++ " - " ++ show endLine ++ "," ++ show endPos
+    iter <- treeStoreAppend store piter (text, startLine, startPos, endLine, endPos, posStr)
     return (store, Just iter)
 
 onSynButtonClicked :: AppUI -> IO ()
@@ -420,10 +425,36 @@ onSynButtonClicked appUI = do
         Right tokens ->
             case Syn.parse tokens of
                 Left (Syn.ParserError (Syn.ErrorMsg msg) line pos) -> do
-                    _ <- treeStoreAppend (uiSynStore appUI) Nothing (msg, line, pos, line, pos+1)
+                    let posStr = show line ++ "," ++ show pos
+                    _ <- treeStoreAppend (uiSynStore appUI) Nothing (msg, line, pos, line, pos+1, posStr)
                     return ()
                 Right program ->
                      asttraverse synDisplayNode program (uiSynStore appUI, Nothing)
+
+onSynSelectionChanged :: AppUI -> IO ()
+onSynSelectionChanged appUI = do
+    (selected, _, iter) <- #getSelected $ uiSynSelection appUI
+    when selected $ do
+        slGV <- #getValue (uiSynStore appUI) iter 1
+        startLine <- fromGValue slGV :: IO Int64
+
+        spGV <- #getValue (uiSynStore appUI) iter 2
+        startPos <- fromGValue spGV :: IO Int64
+
+        elGV <- #getValue (uiSynStore appUI) iter 3
+        endLine <- fromGValue elGV :: IO Int64
+
+        epGV <- #getValue (uiSynStore appUI) iter 4
+        endPos <- fromGValue epGV :: IO Int64
+
+        buffer <- #getBuffer $ uiSourceEdit appUI
+        cursor <- #getIterAtLineOffset buffer (fromIntegral startLine - 1) (fromIntegral startPos - 1)
+        cursor2 <- #getIterAtLineOffset buffer (fromIntegral endLine - 1) (fromIntegral endPos - 1)
+        #selectRange buffer cursor cursor2
+
+        _ <- #scrollToIter (uiSourceEdit appUI) cursor 0 True 0.5 0.5
+        return ()
+    return ()
 
 treeStoreAppend :: (ToGValueList v) => Gtk.TreeStore -> Maybe Gtk.TreeIter -> v -> IO Gtk.TreeIter
 treeStoreAppend store maybeParent vals = do
@@ -441,5 +472,6 @@ main = do
     on (uiLexButton appUI) #clicked (onLexButtonClicked appUI)
     on (uiLexSelection appUI) #changed (onLexSelectionChanged appUI)
     on (uiSynButton appUI) #clicked (onSynButtonClicked appUI)
+    on (uiSynSelection appUI) #changed (onSynSelectionChanged appUI)
     #showAll (uiWindow appUI)
     Gtk.main
