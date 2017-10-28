@@ -2,6 +2,7 @@ module Pilya.Parcomb
     ( ErrorMsg (..)
     , Parser (..)
     , parserError
+    , lookahead'
     , lookahead
     , consume
     , skip
@@ -15,6 +16,9 @@ module Pilya.Parcomb
     , suffixed
     , trace
     , traceStack
+    , Cursor (..)
+    , cursor
+    , cursorAfter
     , ParserError (..)
     , parse
     ) where
@@ -63,11 +67,16 @@ instance Monad Parser where
                 Right val -> runParser (pf val) resta)
     fail = parserError
 
-lookahead :: Parser TokenType
-lookahead = Parser runLookahead
+lookahead' :: Parser Token
+lookahead' = Parser runLookahead
     where
         runLookahead []     = (Left $ ErrorMsg "Unexpected EOF", [])
-        runLookahead (t:ts) = (Right $ tokenType t, t:ts)
+        runLookahead (t:ts) = (Right t, t:ts)
+
+lookahead :: Parser TokenType
+lookahead = do
+    tok <- lookahead'
+    return $ tokenType tok
 
 consume :: Parser TokenType
 consume = Parser runConsume
@@ -153,6 +162,21 @@ trace msg p = Parser (\tokens ->
 traceStack :: String -> Parser a -> Parser a
 traceStack msg p = Parser (\tokens ->
     Dbg.traceStack (msg ++ show (take 1 tokens)) (runParser p tokens))
+
+data Cursor = Cursor
+    { cursorLine :: Int
+    , cursorPos  :: Int
+    }
+
+cursor :: Parser Cursor
+cursor = do
+    tok <- lookahead'
+    return $ Cursor (tokenLine tok) (tokenPos tok)
+
+cursorAfter :: Parser Cursor
+cursorAfter = do
+    tok <- lookahead'
+    return $ Cursor (tokenLine tok) (tokenPos tok + tokenLength tok)
 
 data ParserError = ParserError
     { errorMsg  :: ErrorMsg
