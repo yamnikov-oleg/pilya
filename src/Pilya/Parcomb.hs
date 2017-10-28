@@ -4,6 +4,8 @@ module Pilya.Parcomb
     , parserError
     , lookahead'
     , lookahead
+    , lookbehind'
+    , lookbehind
     , consume
     , skip
     , expect
@@ -19,6 +21,7 @@ module Pilya.Parcomb
     , Cursor (..)
     , cursor
     , cursorAfter
+    , cursorBehind
     , ParserError (..)
     , parse
     ) where
@@ -32,57 +35,76 @@ import           Pilya.Lex   (Token (..), TokenType (..))
 newtype ErrorMsg = ErrorMsg String
     deriving (Show)
 
+data ParserResult a = ParserResult
+    { resultValue :: Either ErrorMsg a
+    , resultLast  :: Maybe Token
+    , resultRest  :: [Token]
+    }
+
+instance Functor ParserResult where
+    fmap f (ParserResult val lst rest) = ParserResult (fmap f val) lst rest
+
 newtype Parser a = Parser
-    { runParser :: [Token] -> (Either ErrorMsg a, [Token])
+    { runParser :: Maybe Token -> [Token] -> ParserResult a
     }
 
 instance Functor Parser where
-    fmap f parser = Parser (\tokens ->
+    fmap f parser = Parser (\lasttok tokens ->
         let
-            (result, rest) = runParser parser tokens
+            result = runParser parser lasttok tokens
         in
-            (fmap f result, rest))
+            fmap f result)
 
 instance Applicative Parser where
-    pure x = Parser (\tokens -> (Right x, tokens))
-    pf <*> px = Parser (\tokens ->
+    pure x = Parser (ParserResult (Right x))
+    pf <*> px = Parser (\lastTok tokens ->
         let
-            (resf, restf) = runParser pf tokens
-            (resx, restx) = runParser px restf
+            ParserResult valf lastf restf = runParser pf lastTok tokens
+            ParserResult valx lastx restx = runParser px lastf restf
         in
-            (resf <*> resx, restx))
+            ParserResult (valf <*> valx) lastx restx)
 
 parserError :: String -> Parser a
 parserError msg = Parser runParserError
     where
-        runParserError tokens = (Left $ ErrorMsg msg, tokens)
+        runParserError = ParserResult (Left $ ErrorMsg msg)
 
 instance Monad Parser where
-    pa >>= pf = Parser (\tokens ->
+    pa >>= pf = Parser (\lastTok tokens ->
         let
-            (resa, resta) = runParser pa tokens
+            ParserResult resa lasta resta = runParser pa lastTok tokens
         in
             case resa of
-                Left err  -> (Left err, resta)
-                Right val -> runParser (pf val) resta)
+                Left err  -> ParserResult (Left err) lasta resta
+                Right val -> runParser (pf val) lasta resta)
     fail = parserError
 
 lookahead' :: Parser Token
 lookahead' = Parser runLookahead
     where
-        runLookahead []     = (Left $ ErrorMsg "Unexpected EOF", [])
-        runLookahead (t:ts) = (Right t, t:ts)
+        runLookahead lastTok []     = ParserResult (Left $ ErrorMsg "Unexpected EOF") lastTok []
+        runLookahead lastTok (t:ts) = ParserResult (Right t) lastTok (t:ts)
 
 lookahead :: Parser TokenType
 lookahead = do
     tok <- lookahead'
     return $ tokenType tok
 
+lookbehind' :: Parser (Maybe Token)
+lookbehind' = Parser runLookbehind
+    where
+        runLookbehind lastTok = ParserResult (Right lastTok) lastTok
+
+lookbehind :: Parser (Maybe TokenType)
+lookbehind = do
+    t <- lookbehind'
+    return $ fmap tokenType t
+
 consume :: Parser TokenType
 consume = Parser runConsume
     where
-        runConsume []     = (Left $ ErrorMsg "Unexpected EOF", [])
-        runConsume (t:ts) = (Right $ tokenType t, ts)
+        runConsume lastTok []     = ParserResult (Left $ ErrorMsg "Unexpected EOF") lastTok []
+        runConsume _ (t:ts) = ParserResult (Right $ tokenType t) (Just t) ts
 
 skip :: Parser ()
 skip = do
@@ -104,10 +126,10 @@ expectAny tts = do
         else parserError $ "Expected one of tokens: " ++ intercalate ", " (map show tts)
 
 tryParse :: Parser a -> Parser (Either ErrorMsg a)
-tryParse parser = Parser (\tokens ->
-    case runParser parser tokens of
-        (Left msg, _)   -> (Right $ Left msg, tokens)
-        (Right x, rest) -> (Right $ Right x, rest))
+tryParse parser = Parser (\lastTok tokens ->
+    case runParser parser lastTok tokens of
+        ParserResult (Left msg) _ _         -> ParserResult (Right $ Left msg) lastTok tokens
+        ParserResult (Right x) newLast rest -> ParserResult (Right $ Right x) newLast rest)
 
 many0 :: Parser a -> Parser [a]
 many0 p = do
@@ -156,12 +178,12 @@ suffixed pa pb = do
     return xa
 
 trace :: String -> Parser a -> Parser a
-trace msg p = Parser (\tokens ->
-    Dbg.trace (msg ++ show (take 1 tokens)) (runParser p tokens))
+trace msg p = Parser (\lastTok tokens ->
+    Dbg.trace (msg ++ show (take 1 tokens)) (runParser p lastTok tokens))
 
 traceStack :: String -> Parser a -> Parser a
-traceStack msg p = Parser (\tokens ->
-    Dbg.traceStack (msg ++ show (take 1 tokens)) (runParser p tokens))
+traceStack msg p = Parser (\lastTok tokens ->
+    Dbg.traceStack (msg ++ show (take 1 tokens)) (runParser p lastTok tokens))
 
 data Cursor = Cursor
     { cursorLine :: Int
@@ -178,6 +200,13 @@ cursorAfter = do
     tok <- lookahead'
     return $ Cursor (tokenLine tok) (tokenPos tok + tokenLength tok)
 
+cursorBehind :: Parser Cursor
+cursorBehind = do
+    mt <- lookbehind'
+    case mt of
+        Just t  -> return $ Cursor (tokenLine t) (tokenPos t + tokenLength t)
+        Nothing -> return $ Cursor 1 1
+
 data ParserError = ParserError
     { errorMsg  :: ErrorMsg
     , errorLine :: Int
@@ -186,11 +215,12 @@ data ParserError = ParserError
 
 parse :: Parser a -> [Token] -> Either ParserError a
 parse parser tokens = case parseResult of
-    (Left msg, [])  -> Left $ ParserError msg lastLine lastPos
-    (Left msg, t:_) -> Left $ ParserError msg (tokenLine t) (tokenPos t)
-    (Right val, _)  -> Right val
+    ParserResult (Left msg) lastTok []    -> Left $ ParserError msg (lastLine lastTok) (lastPos lastTok)
+    ParserResult (Left msg) _ (t:_) -> Left $ ParserError msg (tokenLine t) (tokenPos t)
+    ParserResult (Right val) _ _          -> Right val
     where
-        parseResult = runParser parser tokens
-        (lastLine, lastPos) = case tokens of
-            [] -> (1, 1)
-            t -> let lt = last t in (tokenLine lt, tokenPos lt + tokenLength lt)
+        parseResult = runParser parser Nothing tokens
+        lastLine Nothing  = 1
+        lastLine (Just t) = tokenLine t
+        lastPos Nothing  = 1
+        lastPos (Just t) = tokenPos t
