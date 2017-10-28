@@ -17,6 +17,7 @@ library
                      , Pilya.Parcomb
                      , Pilya.Syn
                      , Pilya.Table
+                     , Pilya.Traverse
   build-depends:       base >= 4.7 && < 5
                      , text
                      , containers

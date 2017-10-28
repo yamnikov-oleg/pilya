@@ -190,6 +190,9 @@ data Cursor = Cursor
     , cursorPos  :: Int
     }
 
+instance Show Cursor where
+    show (Cursor line pos) = show (line, pos)
+
 cursor :: Parser Cursor
 cursor = do
     tok <- lookahead'

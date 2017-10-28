@@ -15,6 +15,7 @@ import qualified GI.Gtk              as Gtk
 import qualified Pilya.Lex           as Lex
 import qualified Pilya.Syn           as Syn
 import qualified Pilya.Table         as Tbl
+import           Pilya.Traverse      (ASTTraversible (..))
 
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
@@ -204,8 +205,10 @@ buildUI = do
 
     (synOutputScroll, synTreeView, synStore) <- buildTreeView
         [ (Just "Name", gtypeString)
-        , (Just "Line", gtypeInt64)
-        , (Just "Pos", gtypeInt64)
+        , (Just "Sl", gtypeInt64)
+        , (Just "Sp", gtypeInt64)
+        , (Just "El", gtypeInt64)
+        , (Just "Ep", gtypeInt64)
         ]
     set lexOutputScroll
         [ #hexpand := True
@@ -396,112 +399,12 @@ onLexSelectionChanged appUI = do
         _ <- #scrollToIter (uiSourceEdit appUI) cursor 0 True 0.5 0.5
         return ()
 
-synDisplayMulr :: Gtk.TreeStore -> Gtk.TreeIter -> Syn.Multiplier -> IO ()
-synDisplayMulr store parentIter (Syn.MultIdent ident) = do
-    let text = "Ident " ++ ident
-    _ <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    return ()
-synDisplayMulr store parentIter (Syn.MultNumber lit) = do
-    let text = case lit of
-            Syn.NumInteger int -> "Integer " ++ show int
-            Syn.NumReal real   -> "Real " ++ show real
-    _ <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    return ()
-synDisplayMulr store parentIter (Syn.MultBool lit) = do
-    let text = case lit of
-            Syn.BoolTrue  -> "True" :: String
-            Syn.BoolFalse -> "False" :: String
-    _ <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    return ()
-synDisplayMulr store parentIter (Syn.MultNot mulr) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Not" :: String, 0 :: Int, 0 :: Int)
-    synDisplayMulr store iter mulr
-synDisplayMulr store parentIter (Syn.MultGrouped expr) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Group" :: String, 0 :: Int, 0 :: Int)
-    synDisplayExpression store iter expr
-
-synDisplayMultOpPair :: Gtk.TreeStore -> Gtk.TreeIter -> (Syn.MultOperation, Syn.Multiplier) -> IO ()
-synDisplayMultOpPair store parentIter (op, mulr) = do
-    _ <- treeStoreAppend store (Just parentIter) (show op, 0 :: Int, 0 :: Int)
-    synDisplayMulr store parentIter mulr
-    return ()
-
-synDisplayMult :: Gtk.TreeStore -> Gtk.TreeIter -> Syn.Multiplication -> IO ()
-synDisplayMult store parentIter (Syn.Multiplication mulr opPairs) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Multiplication" :: String, 0 :: Int, 0 :: Int)
-    synDisplayMulr store iter mulr
-    forM_ opPairs (synDisplayMultOpPair store iter)
-
-synDisplaySumOpPair :: Gtk.TreeStore -> Gtk.TreeIter -> (Syn.SumOperation, Syn.Multiplication) -> IO ()
-synDisplaySumOpPair store parentIter (op, mult) = do
-    _ <- treeStoreAppend store (Just parentIter) (show op, 0 :: Int, 0 :: Int)
-    synDisplayMult store parentIter mult
-    return ()
-
-synDisplaySummation :: Gtk.TreeStore -> Gtk.TreeIter -> Syn.Summation -> IO ()
-synDisplaySummation store parentIter (Syn.Summation mult opPairs) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Summation" :: String, 0 :: Int, 0 :: Int)
-    synDisplayMult store iter mult
-    forM_ opPairs (synDisplaySumOpPair store iter)
-
-synDisplayLogOpPair :: Gtk.TreeStore -> Gtk.TreeIter -> (Syn.LogOperation, Syn.Summation) -> IO ()
-synDisplayLogOpPair store parentIter (op, summ) = do
-    _ <- treeStoreAppend store (Just parentIter) (show op, 0 :: Int, 0 :: Int)
-    synDisplaySummation store parentIter summ
-    return ()
-
-synDisplayExpression :: Gtk.TreeStore -> Gtk.TreeIter -> Syn.Expression -> IO ()
-synDisplayExpression store parentIter (Syn.Expression summ opPairs) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Expression" :: String, 0 :: Int, 0 :: Int)
-    synDisplaySummation store iter summ
-    forM_ opPairs (synDisplayLogOpPair store iter)
-
-synDisplayStatement :: Gtk.TreeStore -> Gtk.TreeIter -> Syn.Statement -> IO ()
-synDisplayStatement store parentIter (Syn.StmtAssignment ident expr) = do
-    let text = "Assignment " ++ ident
-    iter <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    synDisplayExpression store iter expr
-    return ()
-synDisplayStatement store parentIter (Syn.StmtCondition cond thenBranch mElseBranch) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Condition" :: String, 0 :: Int, 0 :: Int)
-    synDisplayExpression store iter cond
-    synDisplayStatement store iter thenBranch
-    case mElseBranch of
-        Just elseBranch -> synDisplayStatement store iter elseBranch
-        Nothing         -> return ()
-synDisplayStatement store parentIter (Syn.StmtForLoop var from to body) = do
-    let text = "ForLoop " ++ var
-    iter <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    synDisplayExpression store iter from
-    synDisplayExpression store iter to
-    synDisplayStatement store iter body
-synDisplayStatement store parentIter (Syn.StmtWhileLoop cond body) = do
-    iter <- treeStoreAppend store (Just parentIter) ("WhileLoop" :: String, 0 :: Int, 0 :: Int)
-    synDisplayExpression store iter cond
-    synDisplayStatement store iter body
-synDisplayStatement store parentIter (Syn.StmtRead idents) = do
-    let text = "Read " ++ intercalate ", " (idents::[String])
-    _ <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    return ()
-synDisplayStatement store parentIter (Syn.StmtWrite exprs) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Write" :: String, 0 :: Int, 0 :: Int)
-    forM_ exprs (synDisplayExpression store iter)
-synDisplayStatement store parentIter (Syn.StmtCompound stmts) = do
-    iter <- treeStoreAppend store (Just parentIter) ("Compound" :: String, 0 :: Int, 0 :: Int)
-    forM_ stmts (synDisplayStatement store iter)
-
-synDisplayBlock :: Gtk.TreeStore -> Gtk.TreeIter -> Syn.Block -> IO ()
-synDisplayBlock store parentIter (Syn.BlockDecl idents typ) = do
-    let text = "Declaration " ++ intercalate ", " (idents::[String]) ++ " : " ++ show typ
-    _ <- treeStoreAppend store (Just parentIter) (text, 0 :: Int, 0 :: Int)
-    return ()
-synDisplayBlock store parentIter (Syn.BlockStmt stmt) =
-    synDisplayStatement store parentIter stmt
-
-synDisplayProgram :: Gtk.TreeStore -> Syn.Program -> IO ()
-synDisplayProgram store (Syn.Program blocks) = do
-    iter <- treeStoreAppend store Nothing ("Program" :: String, 0 :: Int, 0 :: Int)
-    forM_ blocks (synDisplayBlock store iter)
+synDisplayNode :: Syn.Node String -> (Gtk.TreeStore, Maybe Gtk.TreeIter) -> IO (Gtk.TreeStore, Maybe Gtk.TreeIter)
+synDisplayNode (Syn.Node text start end) (store, piter) = do
+    let Syn.Cursor startLine startPos = start
+    let Syn.Cursor endLine endPos = end
+    iter <- treeStoreAppend store piter (text, startLine, startPos, endLine, endPos)
+    return (store, Just iter)
 
 onSynButtonClicked :: AppUI -> IO ()
 onSynButtonClicked appUI = do
@@ -517,10 +420,10 @@ onSynButtonClicked appUI = do
         Right tokens ->
             case Syn.parse tokens of
                 Left (Syn.ParserError (Syn.ErrorMsg msg) line pos) -> do
-                    _ <- treeStoreAppend (uiSynStore appUI) Nothing (msg, line, pos)
+                    _ <- treeStoreAppend (uiSynStore appUI) Nothing (msg, line, pos, line, pos+1)
                     return ()
                 Right program ->
-                    synDisplayProgram (uiSynStore appUI) program
+                     asttraverse synDisplayNode program (uiSynStore appUI, Nothing)
 
 treeStoreAppend :: (ToGValueList v) => Gtk.TreeStore -> Maybe Gtk.TreeIter -> v -> IO Gtk.TreeIter
 treeStoreAppend store maybeParent vals = do

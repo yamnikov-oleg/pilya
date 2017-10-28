@@ -1,27 +1,45 @@
 module Pilya.Syn
-    ( Type (..)
+    ( Identifier
+    , NIdentifier
+    , Type (..)
+    , NType
     , NumberLiteral (..)
+    , NNumberLiteral
     , BoolLiteral (..)
+    , NBoolLiteral
     , Multiplier (..)
+    , NMultiplier
     , MultOperation (..)
+    , NMultOperation
     , Multiplication (..)
+    , NMultiplication
     , SumOperation (..)
+    , NSumOperation
     , Summation (..)
+    , NSummation
     , LogOperation (..)
+    , NLogOperation
     , Expression (..)
+    , NExpression
     , Statement (..)
+    , NStatement
     , Block (..)
+    , NBlock
     , Program (..)
+    , NProgram
     , parse
     , ParserError (..)
     , ErrorMsg (..)
+    , Node (..)
+    , Cursor (..)
     )
     where
 
 import           Control.Monad (when)
 import           Pilya.Lex     (Token (..), TokenType (..))
-import           Pilya.Parcomb (ErrorMsg (..), Parser (..), ParserError (..),
-                                consume, expect, expectAny, lookahead, many1sep,
+import           Pilya.Parcomb (Cursor, ErrorMsg (..), Parser (..),
+                                ParserError (..), consume, cursor, cursorBehind,
+                                expect, expectAny, lookahead, many1sep,
                                 parserError, skip, tryParse)
 import qualified Pilya.Parcomb as Parcomb
 
@@ -34,7 +52,28 @@ newlines = do
         skip
         newlines
 
+data Node a = Node
+    { nodeValue :: a
+    , nodeStart :: Cursor
+    , nodeEnd   :: Cursor
+    }
+
+instance (Show a) => Show (Node a) where
+    show (Node val _ _) = show val
+
+instance Functor Node where
+    fmap f (Node val start end) = Node (f val) start end
+
+node :: Parser a -> Parser (Node a)
+node p = do
+    start <- cursor
+    val <- p
+    end <- cursorBehind
+    return $ Node val start end
+
 type Identifier = String
+
+type NIdentifier = Node Identifier
 
 data Type
     = TypeInt
@@ -42,33 +81,37 @@ data Type
     | TypeBool
     deriving (Show)
 
+type NType = Node Type
+
 typeFromToken :: TokenType -> Type
 typeFromToken TokPercent = TypeInt
 typeFromToken TokExcl = TypeReal
 typeFromToken TokDollar = TypeBool
 typeFromToken tt = error $ "Token " ++ show tt ++ " does not denote a type"
 
-identifier :: Parser Identifier
-identifier = do
+identifier :: Parser NIdentifier
+identifier = node $ do
     tt <- lookahead
     case tt of
         TokIdent s -> do { consume; return s }
         _          -> parserError "Expected identifier"
 
-declaration :: Parser ([Identifier], Type)
+declaration :: Parser ([NIdentifier], NType)
 declaration = do
     expect TokKwDim
     idents <- many1sep (expect TokComma) identifier
-    typeTok <- expectAny [TokPercent, TokExcl, TokDollar]
-    return (idents, typeFromToken typeTok)
+    typeTok <- node $ expectAny [TokPercent, TokExcl, TokDollar]
+    return (idents, fmap typeFromToken typeTok)
 
 data NumberLiteral
     = NumInteger Integer
     | NumReal Double
     deriving (Show)
 
-numberLiteral :: Parser NumberLiteral
-numberLiteral = do
+type NNumberLiteral = Node NumberLiteral
+
+numberLiteral :: Parser NNumberLiteral
+numberLiteral = node $ do
     tt <- lookahead
     case tt of
         TokInteger int -> do
@@ -81,8 +124,10 @@ numberLiteral = do
 
 data BoolLiteral = BoolTrue | BoolFalse deriving (Show)
 
-boolLiteral :: Parser BoolLiteral
-boolLiteral = do
+type NBoolLiteral = Node BoolLiteral
+
+boolLiteral :: Parser NBoolLiteral
+boolLiteral = node $ do
     tt <- lookahead
     case tt of
         TokKwTrue -> do
@@ -94,20 +139,21 @@ boolLiteral = do
         _ -> parserError $ "Expected boolean, got " ++ show tt
 
 data Multiplier
-    = MultIdent Identifier
-    | MultNumber NumberLiteral
-    | MultBool BoolLiteral
-    | MultNot Multiplier
-    | MultGrouped Expression
+    = MultIdent NIdentifier
+    | MultNumber NNumberLiteral
+    | MultBool NBoolLiteral
+    | MultNot NMultiplier
+    | MultGrouped NExpression
     deriving (Show)
 
-multiplier :: Parser Multiplier
-multiplier = do
+type NMultiplier = Node Multiplier
+
+multiplier :: Parser NMultiplier
+multiplier = node $ do
     tt <- lookahead
     case tt of
-        TokIdent s -> do
-            skip
-            return $ MultIdent s
+        TokIdent _ ->
+            fmap MultIdent identifier
         TokInteger _ ->
             fmap MultNumber numberLiteral
         TokReal _ ->
@@ -132,8 +178,10 @@ data MultOperation
     | MultOpAnd  -- and
     deriving (Show)
 
-multOperation :: Parser MultOperation
-multOperation = do
+type NMultOperation = Node MultOperation
+
+multOperation :: Parser NMultOperation
+multOperation = node $ do
     tt <- expectAny [TokMult, TokDiv, TokKwAnd]
     case tt of
         TokMult  -> return MultOpMult
@@ -141,16 +189,18 @@ multOperation = do
         TokKwAnd -> return MultOpAnd
 
 data Multiplication
-    = Multiplication Multiplier [(MultOperation, Multiplier)]
+    = Multiplication NMultiplier [(NMultOperation, NMultiplier)]
     deriving (Show)
 
-multiplication :: Parser Multiplication
-multiplication = do
+type NMultiplication = Node Multiplication
+
+multiplication :: Parser NMultiplication
+multiplication = node $ do
     m <- multiplier
     ms <- multiplication'
     return $ Multiplication m ms
 
-multiplication' :: Parser [(MultOperation, Multiplier)]
+multiplication' :: Parser [(NMultOperation, NMultiplier)]
 multiplication' = do
     res <- tryParse multOperation
     case res of
@@ -166,8 +216,10 @@ data SumOperation
     | SumOr
     deriving (Show)
 
-sumOperation :: Parser SumOperation
-sumOperation = do
+type NSumOperation = Node SumOperation
+
+sumOperation :: Parser NSumOperation
+sumOperation = node $ do
     tt <- expectAny [TokPlus, TokMinus, TokKwOr]
     case tt of
         TokPlus  -> return SumPlus
@@ -175,16 +227,18 @@ sumOperation = do
         TokKwOr  -> return SumOr
 
 data Summation
-    = Summation Multiplication [(SumOperation, Multiplication)]
+    = Summation NMultiplication [(NSumOperation, NMultiplication)]
     deriving (Show)
 
-summation :: Parser Summation
-summation = do
+type NSummation = Node Summation
+
+summation :: Parser NSummation
+summation = node $ do
     m <- multiplication
     ms <- summation'
     return $ Summation m ms
 
-summation' :: Parser [(SumOperation, Multiplication)]
+summation' :: Parser [(NSumOperation, NMultiplication)]
 summation' = do
     res <- tryParse sumOperation
     case res of
@@ -203,8 +257,10 @@ data LogOperation
     | LogGte
     deriving (Show)
 
-logOperation :: Parser LogOperation
-logOperation = do
+type NLogOperation = Node LogOperation
+
+logOperation :: Parser NLogOperation
+logOperation = node $ do
     tt <- expectAny [TokNeq, TokEq, TokLt, TokLte, TokGt, TokGte]
     case tt of
         TokNeq -> return LogNeq
@@ -215,16 +271,18 @@ logOperation = do
         TokGte -> return LogGte
 
 data Expression
-    = Expression Summation [(LogOperation, Summation)]
+    = Expression NSummation [(NLogOperation, NSummation)]
     deriving (Show)
 
-expression :: Parser Expression
-expression = do
+type NExpression = Node Expression
+
+expression :: Parser NExpression
+expression = node $ do
     sm <- summation
     sms <- expression'
     return $ Expression sm sms
 
-expression' :: Parser [(LogOperation, Summation)]
+expression' :: Parser [(NLogOperation, NSummation)]
 expression' = do
     res <- tryParse logOperation
     case res of
@@ -235,16 +293,18 @@ expression' = do
             return $ (op, sm):pairs
 
 data Statement
-    = StmtCompound [Statement]
-    | StmtAssignment Identifier Expression
-    | StmtCondition Expression Statement (Maybe Statement)
-    | StmtForLoop Identifier Expression Expression Statement
-    | StmtWhileLoop Expression Statement
-    | StmtRead [Identifier]
-    | StmtWrite [Expression]
+    = StmtCompound [NStatement]
+    | StmtAssignment NIdentifier NExpression
+    | StmtCondition NExpression NStatement (Maybe NStatement)
+    | StmtForLoop NIdentifier NExpression NExpression NStatement
+    | StmtWhileLoop NExpression NStatement
+    | StmtRead [NIdentifier]
+    | StmtWrite [NExpression]
     deriving (Show)
 
-compound' :: Parser [Statement]
+type NStatement = Node Statement
+
+compound' :: Parser [NStatement]
 compound' = do
     stmt <- statement
     tt <- expectAny [TokBracketClose, TokSemicolon, TokNewline]
@@ -264,20 +324,20 @@ compound' = do
                     stmts <- compound'
                     return (stmt:stmts)
 
-compound :: Parser [Statement]
+compound :: Parser [NStatement]
 compound = do
     expect TokBracketOpen
     newlines
     compound'
 
-assignment :: Parser (Identifier, Expression)
+assignment :: Parser (NIdentifier, NExpression)
 assignment = do
     ident <- identifier
     expect TokKwAs
     expr <- expression
     return (ident, expr)
 
-condition :: Parser (Expression, Statement, Maybe Statement)
+condition :: Parser (NExpression, NStatement, Maybe NStatement)
 condition = do
     expect TokKwIf
     expr <- expression
@@ -295,7 +355,7 @@ condition = do
             return Nothing
     return (expr, thenBranch, maybeElseBranch)
 
-forLoop :: Parser (Identifier, Expression, Expression, Statement)
+forLoop :: Parser (NIdentifier, NExpression, NExpression, NStatement)
 forLoop = do
     expect TokKwFor
     (ident, initExpr) <- assignment
@@ -305,7 +365,7 @@ forLoop = do
     body <- statement
     return (ident, initExpr, targetExpr, body)
 
-whileLoop :: Parser (Expression, Statement)
+whileLoop :: Parser (NExpression, NStatement)
 whileLoop = do
     expect TokKwWhile
     expr <- expression
@@ -313,7 +373,7 @@ whileLoop = do
     body <- statement
     return (expr, body)
 
-readStmt' :: Parser [Identifier]
+readStmt' :: Parser [NIdentifier]
 readStmt' = do
     tt <- expectAny [TokParenthesisClose, TokComma]
     case tt of
@@ -324,7 +384,7 @@ readStmt' = do
             idents <- readStmt'
             return (ident:idents)
 
-readStmt :: Parser [Identifier]
+readStmt :: Parser [NIdentifier]
 readStmt = do
     expect TokKwRead
     expect TokParenthesisOpen
@@ -332,7 +392,7 @@ readStmt = do
     idents <- readStmt'
     return (ident:idents)
 
-writeStmt' :: Parser [Expression]
+writeStmt' :: Parser [NExpression]
 writeStmt' = do
     tt <- expectAny [TokParenthesisClose, TokComma]
     case tt of
@@ -343,7 +403,7 @@ writeStmt' = do
             exprs <- writeStmt'
             return (expr:exprs)
 
-writeStmt :: Parser [Expression]
+writeStmt :: Parser [NExpression]
 writeStmt = do
     expect TokKwWrite
     expect TokParenthesisOpen
@@ -351,8 +411,8 @@ writeStmt = do
     exprs <- writeStmt'
     return (expr:exprs)
 
-statement :: Parser Statement
-statement = do
+statement :: Parser NStatement
+statement = node $ do
     tt <- lookahead
     case tt of
         TokBracketOpen -> do
@@ -379,12 +439,14 @@ statement = do
         _ -> parserError $ "Expected statement, found " ++ show tt
 
 data Block
-    = BlockDecl [Identifier] Type
-    | BlockStmt Statement
+    = BlockDecl [NIdentifier] NType
+    | BlockStmt NStatement
     deriving (Show)
 
-block :: Parser Block
-block = do
+type NBlock = Node Block
+
+block :: Parser NBlock
+block = node $ do
     tt <- lookahead
     case tt of
         TokKwDim -> do
@@ -399,10 +461,12 @@ blockSeparator = do
     _ <- expectAny [TokSemicolon, TokNewline]
     return ()
 
-newtype Program = Program [Block]
+newtype Program = Program [NBlock]
     deriving (Show)
 
-blocks :: Parser [Block]
+type NProgram = Node Program
+
+blocks :: Parser [NBlock]
 blocks = do
     tt <- lookahead
     if tt == TokKwEnd
@@ -414,11 +478,11 @@ blocks = do
             bs <- blocks
             return $ b:bs
 
-program :: Parser Program
-program = do
+program :: Parser NProgram
+program = node $ do
     bs <- blocks
     expect TokKwEnd
     return $ Program bs
 
-parse :: [Token] -> Either ParserError Program
+parse :: [Token] -> Either ParserError NProgram
 parse = Parcomb.parse program
