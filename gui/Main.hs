@@ -420,7 +420,8 @@ onSynButtonClicked appUI = do
 
     case Lex.parse source of
         Left (Lex.ParserError line pos msg) -> do
-            _ <- treeStoreAppend (uiSynStore appUI) Nothing (msg, line, pos)
+            let posStr = show line ++ "," ++ show pos
+            _ <- treeStoreAppend (uiSynStore appUI) Nothing (msg, line, pos, line, pos+1, posStr)
             return ()
         Right tokens ->
             case Syn.parse tokens of
@@ -430,6 +431,18 @@ onSynButtonClicked appUI = do
                     return ()
                 Right program ->
                      asttraverse synDisplayNode program (uiSynStore appUI, Nothing)
+
+getIterAt :: (Integral l, Integral o) => Gtk.TextBuffer -> l -> o -> IO Gtk.TextIter
+getIterAt buffer line offset = do
+    let line' = if line < 0 then 0 else line
+    cursor <- #getIterAtLine buffer (fromIntegral line)
+    lineLen <- #getCharsInLine cursor
+    let offset' = if offset < 0 then 0 else offset
+    let offset'' = if fromIntegral offset' > lineLen
+            then lineLen
+            else fromIntegral offset'
+    #setLineOffset cursor offset''
+    return cursor
 
 onSynSelectionChanged :: AppUI -> IO ()
 onSynSelectionChanged appUI = do
@@ -448,8 +461,8 @@ onSynSelectionChanged appUI = do
         endPos <- fromGValue epGV :: IO Int64
 
         buffer <- #getBuffer $ uiSourceEdit appUI
-        cursor <- #getIterAtLineOffset buffer (fromIntegral startLine - 1) (fromIntegral startPos - 1)
-        cursor2 <- #getIterAtLineOffset buffer (fromIntegral endLine - 1) (fromIntegral endPos - 1)
+        cursor <- getIterAt buffer (startLine - 1) (startPos - 1)
+        cursor2 <- getIterAt buffer (endLine - 1) (endPos - 1)
         #selectRange buffer cursor cursor2
 
         _ <- #scrollToIter (uiSourceEdit appUI) cursor 0 True 0.5 0.5
