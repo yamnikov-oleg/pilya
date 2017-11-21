@@ -12,6 +12,7 @@ import           Data.List           (intercalate)
 import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
+import qualified Pilya.Compile       as Comp
 import qualified Pilya.Lex           as Lex
 import qualified Pilya.Syn           as Syn
 import qualified Pilya.Table         as Tbl
@@ -37,6 +38,9 @@ data AppUI = AppUI
     , uiSynStore     :: Gtk.TreeStore
     , uiSynSelection :: Gtk.TreeSelection
     , uiSynButton    :: Gtk.Button
+    , uiAsmStore     :: Gtk.TreeStore
+    , uiAsmSelection :: Gtk.TreeSelection
+    , uiAsmButton    :: Gtk.Button
     }
 
 buildListView :: [(Maybe T.Text, Gtk.GType)] -> IO (Gtk.ScrolledWindow, Gtk.TreeView, Gtk.ListStore)
@@ -225,6 +229,34 @@ buildUI = do
         ]
     #packEnd synTabContainer synButton False False 0
 
+    asmTabContainer <- new Gtk.Box
+        [ #orientation := Gtk.OrientationVertical
+        ]
+    asmTabLabel <- new Gtk.Label
+        [ #label := "Assembly"
+        ]
+    #appendPage modeTabs asmTabContainer (Just asmTabLabel)
+
+    (asmOutputScroll, asmTreeView, asmStore) <- buildTreeView
+        [ (Just "I", gtypeString)
+        , (Just "Name", gtypeString)
+        , (Just "Pos", gtypeString)
+        , (Nothing, gtypeInt64)
+        , (Nothing, gtypeInt64)
+        ]
+    set asmOutputScroll
+        [ #hexpand := True
+        , #vexpand := True
+        ]
+    #packStart asmTabContainer asmOutputScroll True True 0
+    asmSelection <- #getSelection asmTreeView
+
+    asmButton <- new Gtk.Button
+        [ #label := "Compile into assembly"
+        , #margin := 6
+        ]
+    #packEnd asmTabContainer asmButton False False 0
+
     return AppUI
         { uiWindow = window
         , uiSourceEdit = sourceEdit
@@ -243,6 +275,9 @@ buildUI = do
         , uiSynStore = synStore
         , uiSynSelection = synSelection
         , uiSynButton = synButton
+        , uiAsmStore = asmStore
+        , uiAsmSelection = asmSelection
+        , uiAsmButton = asmButton
         }
 
 instance IsGValue [Char] where
@@ -469,6 +504,34 @@ onSynSelectionChanged appUI = do
         return ()
     return ()
 
+onAsmButtonClicked :: AppUI -> IO ()
+onAsmButtonClicked appUI = do
+    #clear $ uiSynStore appUI
+
+    srcBuffer <- uiSourceEdit appUI `get` #buffer
+    source <- fmap fromJust $ srcBuffer `get` #text
+
+    case Lex.parse source of
+        Left (Lex.ParserError line pos msg) -> do
+            let posStr = show line ++ "," ++ show pos
+            _ <- treeStoreAppend (uiAsmStore appUI) Nothing ("L"::String, msg, posStr, line, pos)
+            return ()
+        Right tokens ->
+            case Syn.parse tokens of
+                Left (Syn.ParserError (Syn.ErrorMsg msg) line pos) -> do
+                    let posStr = show line ++ "," ++ show pos
+                    _ <- treeStoreAppend (uiAsmStore appUI) Nothing ("S"::String, msg, posStr, line, pos)
+                    return ()
+                Right program ->
+                     case Comp.compile program of
+                        Left (Comp.Error cur msg) -> do
+                            let posStr = show cur
+                            _ <- treeStoreAppend (uiAsmStore appUI) Nothing ("C"::String, msg, posStr, Syn.cursorLine cur, Syn.cursorPos cur)
+                            return ()
+                        Right instr ->
+                            forM_ (Tbl.toEnumList instr) (\(ind, ins) ->
+                                treeStoreAppend (uiAsmStore appUI) Nothing (show ind, show ins, ""::String, -1::Int, -1::Int))
+
 treeStoreAppend :: (ToGValueList v) => Gtk.TreeStore -> Maybe Gtk.TreeIter -> v -> IO Gtk.TreeIter
 treeStoreAppend store maybeParent vals = do
     gvals <- toGValueList vals
@@ -486,5 +549,6 @@ main = do
     on (uiLexSelection appUI) #changed (onLexSelectionChanged appUI)
     on (uiSynButton appUI) #clicked (onSynButtonClicked appUI)
     on (uiSynSelection appUI) #changed (onSynSelectionChanged appUI)
+    on (uiAsmButton appUI) #clicked (onAsmButtonClicked appUI)
     #showAll (uiWindow appUI)
     Gtk.main

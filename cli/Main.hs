@@ -37,8 +37,8 @@ synParseAndPrint path = do
                 Right prg ->
                     asttraverse synPrint prg 0
 
-compParseAndPrint :: String -> IO ()
-compParseAndPrint path = do
+asmParseAndPrint :: String -> IO ()
+asmParseAndPrint path = do
     text <- TIO.readFile path
     case Lex.parse text of
         Left (Lex.ParserError line pos msg) ->
@@ -67,7 +67,7 @@ main :: IO ()
 main = do
     args <- getArgs
     case args of
-        ["lex", path]  -> lexParseAndPrint path
-        ["syn", path]  -> synParseAndPrint path
-        ["comp", path] -> compParseAndPrint path
-        _              -> printUsage
+        ["lex", path] -> lexParseAndPrint path
+        ["syn", path] -> synParseAndPrint path
+        ["asm", path] -> asmParseAndPrint path
+        _             -> printUsage
