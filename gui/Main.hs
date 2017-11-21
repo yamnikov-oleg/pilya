@@ -506,7 +506,7 @@ onSynSelectionChanged appUI = do
 
 onAsmButtonClicked :: AppUI -> IO ()
 onAsmButtonClicked appUI = do
-    #clear $ uiSynStore appUI
+    #clear $ uiAsmStore appUI
 
     srcBuffer <- uiSourceEdit appUI `get` #buffer
     source <- fmap fromJust $ srcBuffer `get` #text
