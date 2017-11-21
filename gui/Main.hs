@@ -529,8 +529,36 @@ onAsmButtonClicked appUI = do
                             _ <- treeStoreAppend (uiAsmStore appUI) Nothing ("C"::String, msg, posStr, Syn.cursorLine cur, Syn.cursorPos cur)
                             return ()
                         Right instr ->
-                            forM_ (Tbl.toEnumList instr) (\(ind, ins) ->
-                                treeStoreAppend (uiAsmStore appUI) Nothing (show ind, show ins, ""::String, -1::Int, -1::Int))
+                            forM_ (Tbl.toEnumList instr) (\(ind, (line, ins)) ->
+                                treeStoreAppend (uiAsmStore appUI) Nothing (show ind, show ins, show line, line, -1::Int))
+
+onAsmSelectionChanged :: AppUI -> IO ()
+onAsmSelectionChanged appUI = do
+    (selected, _, iter) <- #getSelected $ uiAsmSelection appUI
+    when selected $ do
+        lineGV <- #getValue (uiAsmStore appUI) iter 3
+        line <- fromGValue lineGV :: IO Int64
+
+        posGV <- #getValue (uiAsmStore appUI) iter 4
+        pos <- fromGValue posGV :: IO Int64
+
+        buffer <- #getBuffer $ uiSourceEdit appUI
+        (cursor, cursor2) <- if pos >= 0
+        then do
+            cursor <- #getIterAtLineOffset buffer (fromIntegral line - 1) (fromIntegral pos - 1)
+            cursor2 <- #copy cursor
+            _ <- #forwardChars cursor2 1
+            return (cursor, cursor2)
+        else do
+            cursor <- #getIterAtLineOffset buffer (fromIntegral line - 1) 0
+            cursor2 <- #copy cursor
+            _ <- #forwardToLineEnd cursor2
+            return (cursor, cursor2)
+
+        #selectRange buffer cursor cursor2
+        _ <- #scrollToIter (uiSourceEdit appUI) cursor 0 True 0.5 0.5
+        return ()
+    return ()
 
 treeStoreAppend :: (ToGValueList v) => Gtk.TreeStore -> Maybe Gtk.TreeIter -> v -> IO Gtk.TreeIter
 treeStoreAppend store maybeParent vals = do
@@ -550,5 +578,6 @@ main = do
     on (uiSynButton appUI) #clicked (onSynButtonClicked appUI)
     on (uiSynSelection appUI) #changed (onSynSelectionChanged appUI)
     on (uiAsmButton appUI) #clicked (onAsmButtonClicked appUI)
+    on (uiAsmSelection appUI) #changed (onAsmSelectionChanged appUI)
     #showAll (uiWindow appUI)
     Gtk.main

@@ -52,7 +52,7 @@ asmParseAndPrint path = do
                         Left (Comp.Error cur msg) ->
                             putStrLn $ "C:" ++ show (Syn.cursorLine cur) ++ ":" ++ show (Syn.cursorPos cur) ++ ": " ++ msg
                         Right instr ->
-                            forM_ (Tbl.toEnumList instr) (\(i, ins) -> putStrLn $ show i ++ " @ " ++ show ins)
+                            forM_ (Tbl.toEnumList instr) (\(i, (line, ins)) -> putStrLn $ show i ++ " @ " ++ show line ++ " : " ++ show ins)
 printUsage :: IO ()
 printUsage = do
     putStrLn "Usage:"
@@ -61,7 +61,7 @@ printUsage = do
     putStrLn "Supported commands:"
     putStrLn "    lex <filepath>  - perform lexical analysis (tokenization)"
     putStrLn "    syn <filepath>  - perform syntax tree parsing"
-    putStrLn "    comp <filepath> - compile into VM instructions"
+    putStrLn "    asm <filepath> - compile into VM instructions"
 
 main :: IO ()
 main = do

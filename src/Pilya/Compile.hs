@@ -36,7 +36,7 @@ fromSynType Syn.TypeReal = TypeReal
 fromSynType Syn.TypeBool = TypeBool
 
 data State = State
-    { stInstr     :: Table Exec.Instruction
+    { stInstr     :: Table (Int, Exec.Instruction)
     , stTmpVarCnt :: Integer
     , stTypeMap   :: Map String Type
     }
@@ -71,14 +71,14 @@ instance Monad Compiler where
 cerror :: Syn.Cursor -> String -> Compiler ()
 cerror cur msg = Compiler (\_ -> Left $ Error cur msg)
 
-ins :: Exec.Instruction -> Compiler Int
-ins i = Compiler (\(State is cnt tm) ->
-    let (ind, is2) = Tbl.append is i in
+ins :: Int -> Exec.Instruction -> Compiler Int
+ins line i = Compiler (\(State is cnt tm) ->
+    let (ind, is2) = Tbl.append is (line, i) in
     Right (ind, State is2 cnt tm))
 
-setins :: Int -> Exec.Instruction -> Compiler ()
-setins ind ins = Compiler (\(State is cnt tm) ->
-    Right ((), State (Tbl.set is ind ins) cnt tm))
+setins :: Int -> Int -> Exec.Instruction -> Compiler ()
+setins ind line ins = Compiler (\(State is cnt tm) ->
+    Right ((), State (Tbl.set is ind (line, ins)) cnt tm))
 
 tmpcnt :: Compiler Integer
 tmpcnt = Compiler (\st@(State _ cnt _) -> Right (cnt, st))
@@ -102,11 +102,11 @@ settype :: String -> Type -> Compiler ()
 settype varname tp = Compiler (\(State is tc tm) ->
     Right ((), State is tc (M.insert varname tp tm)))
 
-tmpvar :: Exec.Value -> Compiler String
-tmpvar val = do
+tmpvar :: Int -> Exec.Value -> Compiler String
+tmpvar line val = do
     tmpcnt <- tmpcnt
     let varname = "$t" ++ show (tmpcnt + 1)
-    ins $ Exec.IDecl varname val
+    ins line $ Exec.IDecl varname val
     inctmpcnt
     settype varname (typeOf val)
     return varname
@@ -115,64 +115,68 @@ compileMultiplier :: Syn.NMultiplier -> Compiler (String, Type)
 compileMultiplier (Syn.Node (Syn.MultIdent ident) start _) = do
     tp <- gettype (Syn.nodeValue ident) (Syn.nodeStart ident)
     return (Syn.nodeValue ident, tp)
-compileMultiplier (Syn.Node (Syn.MultNumber num) start _) =
+compileMultiplier (Syn.Node (Syn.MultNumber num) start _) = do
+    let line = Syn.cursorLine start
     case Syn.nodeValue num of
         Syn.NumInteger int -> do
-            varname <- tmpvar (Exec.ValInt int)
+            varname <- tmpvar line (Exec.ValInt int)
             return (varname, TypeInt)
         Syn.NumReal dbl -> do
-            varname <- tmpvar (Exec.ValReal dbl)
+            varname <- tmpvar line (Exec.ValReal dbl)
             return (varname, TypeReal)
 compileMultiplier (Syn.Node (Syn.MultBool bool) start _) = do
+    let line = Syn.cursorLine start
     let b = case Syn.nodeValue bool of
             Syn.BoolTrue  -> True
             Syn.BoolFalse -> False
-    varname <- tmpvar (Exec.ValBool b)
+    varname <- tmpvar line (Exec.ValBool b)
     return (varname, TypeBool)
 compileMultiplier (Syn.Node (Syn.MultNot mulr) start _) = do
+    let line = Syn.cursorLine start
     (varname, tp) <- compileMultiplier mulr
     when (tp /= TypeBool) $
         cerror start $ "Can't apply 'not' operator to a value of type " ++ show tp
-    outname <- tmpvar (defaultOf TypeBool)
-    ins (Exec.INot varname outname)
+    outname <- tmpvar line (defaultOf TypeBool)
+    ins line (Exec.INot varname outname)
     return (outname, TypeBool)
 compileMultiplier (Syn.Node (Syn.MultGrouped expr) _ _) =
     compileExpression expr
 
 compileMultiplication :: Syn.NMultiplication -> Compiler (String, Type)
-compileMultiplication (Syn.Node (Syn.Multiplication mulr oppairs) _ _) = do
+compileMultiplication (Syn.Node (Syn.Multiplication mulr oppairs) start _) = do
+    let line = Syn.cursorLine start
     (var1, typ) <- compileMultiplier mulr
 
     if null oppairs
     then
         return (var1, typ)
     else do
-        outvar <- tmpvar $ defaultOf typ
-        ins (Exec.IMov var1 outvar)
+        outvar <- tmpvar line $ defaultOf typ
+        ins line (Exec.IMov var1 outvar)
         forM_ oppairs (\(nop, mul) -> do
             let (Syn.Node op opstart _) = nop
             (varx, typx) <- compileMultiplier mul
             case (op, typ, typx) of
                 (Syn.MultOpMult, TypeInt, TypeInt) -> do
-                    ins $ Exec.IMulI outvar varx outvar
+                    ins line $ Exec.IMulI outvar varx outvar
                     return ()
                 (Syn.MultOpMult, TypeReal, TypeReal) -> do
-                    ins $ Exec.IMulF outvar varx outvar
+                    ins line $ Exec.IMulF outvar varx outvar
                     return ()
                 (Syn.MultOpMult, _, _) ->
                     cerror opstart $ "Cannot multiply values of type " ++ show typ ++ " and " ++ show typx
 
                 (Syn.MultOpDiv, TypeInt, TypeInt) -> do
-                    ins $ Exec.IDivI outvar varx outvar
+                    ins line $ Exec.IDivI outvar varx outvar
                     return ()
                 (Syn.MultOpDiv, TypeReal, TypeReal) -> do
-                    ins $ Exec.IDivF outvar varx outvar
+                    ins line $ Exec.IDivF outvar varx outvar
                     return ()
                 (Syn.MultOpDiv, _, _) ->
                     cerror opstart $ "Cannot divide values of type " ++ show typ ++ " and " ++ show typx
 
                 (Syn.MultOpAnd, TypeBool, TypeBool) -> do
-                    ins (Exec.IAnd outvar varx outvar)
+                    ins line (Exec.IAnd outvar varx outvar)
                     return ()
                 (Syn.MultOpAnd, _, _) ->
                     cerror opstart $ "Cannot apply AND operator to values of type " ++ show typ ++ " and " ++ show typx)
@@ -180,39 +184,40 @@ compileMultiplication (Syn.Node (Syn.Multiplication mulr oppairs) _ _) = do
         return (outvar, typ)
 
 compileSummation :: Syn.NSummation -> Compiler (String, Type)
-compileSummation (Syn.Node (Syn.Summation muln oppairs) _ _) = do
+compileSummation (Syn.Node (Syn.Summation muln oppairs) start _) = do
+    let line = Syn.cursorLine start
     (var1, typ) <- compileMultiplication muln
 
     if null oppairs
     then
         return (var1, typ)
     else do
-        outvar <- tmpvar $ defaultOf typ
-        ins (Exec.IMov var1 outvar)
+        outvar <- tmpvar line $ defaultOf typ
+        ins line (Exec.IMov var1 outvar)
         forM_ oppairs (\(nop, mul) -> do
             let (Syn.Node op opstart _) = nop
             (varx, typx) <- compileMultiplication mul
             case (op, typ, typx) of
                 (Syn.SumPlus, TypeInt, TypeInt) -> do
-                    ins $ Exec.IAddI outvar varx outvar
+                    ins line $ Exec.IAddI outvar varx outvar
                     return ()
                 (Syn.SumPlus, TypeReal, TypeReal) -> do
-                    ins $ Exec.IAddF outvar varx outvar
+                    ins line $ Exec.IAddF outvar varx outvar
                     return ()
                 (Syn.SumPlus, _, _) ->
                     cerror opstart $ "Cannot add values of type " ++ show typ ++ " and " ++ show typx
 
                 (Syn.SumMinus, TypeInt, TypeInt) -> do
-                    ins $ Exec.ISubI outvar varx outvar
+                    ins line $ Exec.ISubI outvar varx outvar
                     return ()
                 (Syn.SumMinus, TypeReal, TypeReal) -> do
-                    ins $ Exec.ISubF outvar varx outvar
+                    ins line $ Exec.ISubF outvar varx outvar
                     return ()
                 (Syn.SumMinus, _, _) ->
                     cerror opstart $ "Cannot subtract values of type " ++ show typ ++ " and " ++ show typx
 
                 (Syn.SumOr, TypeBool, TypeBool) -> do
-                    ins (Exec.IOr outvar varx outvar)
+                    ins line (Exec.IOr outvar varx outvar)
                     return ()
                 (Syn.SumOr, _, _) ->
                     cerror opstart $ "Cannot apply OR operator to values of type " ++ show typ ++ " and " ++ show typx)
@@ -221,67 +226,68 @@ compileSummation (Syn.Node (Syn.Summation muln oppairs) _ _) = do
 
 compileLogOp :: (String, Type) -> Syn.NLogOperation -> (String, Type) -> Compiler String
 compileLogOp (var1, typ1) nop (var2, typ2) = do
+    let line = Syn.cursorLine $ Syn.nodeStart nop
     let (Syn.Node op opstart _) = nop
-    outvar <- tmpvar $ defaultOf TypeBool
+    outvar <- tmpvar line $ defaultOf TypeBool
     case (op, typ1, typ2) of
         (Syn.LogNeq, TypeInt, TypeInt) -> do
-            ins $ Exec.INeqI var1 var2 outvar
+            ins line $ Exec.INeqI var1 var2 outvar
             return ()
         (Syn.LogNeq, TypeReal, TypeReal) -> do
-            ins $ Exec.INeqF var1 var2 outvar
+            ins line $ Exec.INeqF var1 var2 outvar
             return ()
         (Syn.LogNeq, TypeBool, TypeBool) -> do
-            ins $ Exec.INeqB var1 var2 outvar
+            ins line $ Exec.INeqB var1 var2 outvar
             return ()
 
         (Syn.LogEq, TypeInt, TypeInt) -> do
-            ins $ Exec.IEqI var1 var2 outvar
+            ins line $ Exec.IEqI var1 var2 outvar
             return ()
         (Syn.LogEq, TypeReal, TypeReal) -> do
-            ins $ Exec.IEqF var1 var2 outvar
+            ins line $ Exec.IEqF var1 var2 outvar
             return ()
         (Syn.LogEq, TypeBool, TypeBool) -> do
-            ins $ Exec.IEqB var1 var2 outvar
+            ins line $ Exec.IEqB var1 var2 outvar
             return ()
 
         (Syn.LogLt, TypeInt, TypeInt) -> do
-            ins $ Exec.ILtI var1 var2 outvar
+            ins line $ Exec.ILtI var1 var2 outvar
             return ()
         (Syn.LogLt, TypeReal, TypeReal) -> do
-            ins $ Exec.ILtF var1 var2 outvar
+            ins line $ Exec.ILtF var1 var2 outvar
             return ()
         (Syn.LogLt, TypeBool, TypeBool) -> do
-            ins $ Exec.ILtB var1 var2 outvar
+            ins line $ Exec.ILtB var1 var2 outvar
             return ()
 
         (Syn.LogLte, TypeInt, TypeInt) -> do
-            ins $ Exec.ILteI var1 var2 outvar
+            ins line $ Exec.ILteI var1 var2 outvar
             return ()
         (Syn.LogLte, TypeReal, TypeReal) -> do
-            ins $ Exec.ILteF var1 var2 outvar
+            ins line $ Exec.ILteF var1 var2 outvar
             return ()
         (Syn.LogLte, TypeBool, TypeBool) -> do
-            ins $ Exec.ILteB var1 var2 outvar
+            ins line $ Exec.ILteB var1 var2 outvar
             return ()
 
         (Syn.LogGt, TypeInt, TypeInt) -> do
-            ins $ Exec.IGtI var1 var2 outvar
+            ins line $ Exec.IGtI var1 var2 outvar
             return ()
         (Syn.LogGt, TypeReal, TypeReal) -> do
-            ins $ Exec.IGtF var1 var2 outvar
+            ins line $ Exec.IGtF var1 var2 outvar
             return ()
         (Syn.LogGt, TypeBool, TypeBool) -> do
-            ins $ Exec.IGtB var1 var2 outvar
+            ins line $ Exec.IGtB var1 var2 outvar
             return ()
 
         (Syn.LogGte, TypeInt, TypeInt) -> do
-            ins $ Exec.IGteI var1 var2 outvar
+            ins line $ Exec.IGteI var1 var2 outvar
             return ()
         (Syn.LogGte, TypeReal, TypeReal) -> do
-            ins $ Exec.IGteF var1 var2 outvar
+            ins line $ Exec.IGteF var1 var2 outvar
             return ()
         (Syn.LogGte, TypeBool, TypeBool) -> do
-            ins $ Exec.IGteB var1 var2 outvar
+            ins line $ Exec.IGteB var1 var2 outvar
             return ()
 
         (_, _, _) ->
@@ -290,7 +296,8 @@ compileLogOp (var1, typ1) nop (var2, typ2) = do
     return outvar
 
 compileExpression :: Syn.NExpression -> Compiler (String, Type)
-compileExpression (Syn.Node (Syn.Expression sumn oppairs) _ _) = do
+compileExpression (Syn.Node (Syn.Expression sumn oppairs) start _) = do
+    let line = Syn.cursorLine start
     (var1, typ1) <- compileSummation sumn
     case oppairs of
         [] ->
@@ -307,65 +314,69 @@ compileExpression (Syn.Node (Syn.Expression sumn oppairs) _ _) = do
 
             pairVars <- mapM (\(vt1, op, vt2) -> compileLogOp vt1 op vt2) logPairs
 
-            outvar <- tmpvar $ Exec.ValBool True
-            forM_ pairVars (\var -> ins $ Exec.IAnd outvar var outvar)
+            outvar <- tmpvar line $ Exec.ValBool True
+            forM_ pairVars (\var -> ins line $ Exec.IAnd outvar var outvar)
 
             return (outvar, TypeBool)
 
 compileStatement :: Syn.NStatement -> Compiler Int
-compileStatement (Syn.Node (Syn.StmtCompound stmts) _ _) =
+compileStatement (Syn.Node (Syn.StmtCompound stmts) start _) = do
+    let line = Syn.cursorLine start
     case stmts of
         [] ->
-            ins Exec.INop
+            ins line Exec.INop
         s:ss -> do
             ind <- compileStatement s
             forM_ ss compileStatement
             return ind
 
 compileStatement (Syn.Node (Syn.StmtAssignment ident expr) start _) = do
+    let line = Syn.cursorLine start
     let vvar = Syn.nodeValue ident
     vtyp <- gettype vvar (Syn.nodeStart ident)
-    ind <- ins Exec.INop
+    ind <- ins line Exec.INop
     (evar, etyp) <- compileExpression expr
     when (etyp /= vtyp) $
         cerror start $ "Cannot assign value of typ " ++ show etyp ++ " to a variable of type " ++ show vtyp
-    ins $ Exec.IMov evar vvar
+    ins line $ Exec.IMov evar vvar
     return ind
 
 compileStatement (Syn.Node (Syn.StmtCondition cond thenB mElseB) start _) = do
-    firstInd <- ins Exec.INop
+    let line = Syn.cursorLine start
+    firstInd <- ins line Exec.INop
     (cvar, ctype) <- compileExpression cond
     when (ctype /= TypeBool) $
         cerror start "IF operator's condition must be of type Bool"
 
-    notCvar <- tmpvar (defaultOf TypeBool)
-    ins $ Exec.INot cvar notCvar
+    notCvar <- tmpvar line (defaultOf TypeBool)
+    ins line $ Exec.INot cvar notCvar
 
-    jmpToElseInd <- ins $ Exec.IJmpC notCvar 0
+    jmpToElseInd <- ins line $ Exec.IJmpC notCvar 0
 
     compileStatement thenB
-    jmpToEndInd <- ins $ Exec.IJmp 0
+    jmpToEndInd <- ins line $ Exec.IJmp 0
 
     case mElseB of
         Nothing -> do
-            endInd <- ins Exec.INop
-            setins jmpToElseInd $ Exec.IJmpC notCvar endInd
-            setins jmpToEndInd Exec.INop
+            endInd <- ins line Exec.INop
+            setins jmpToElseInd line $ Exec.IJmpC notCvar endInd
+            setins jmpToEndInd line Exec.INop
             return firstInd
         Just elseB -> do
             elseInd <- compileStatement elseB
-            endInd <- ins Exec.INop
-            setins jmpToElseInd $ Exec.IJmpC notCvar elseInd
-            setins jmpToEndInd $ Exec.IJmp endInd
+            endInd <- ins line Exec.INop
+            setins jmpToElseInd line $ Exec.IJmpC notCvar elseInd
+            setins jmpToEndInd line $ Exec.IJmp endInd
             return firstInd
 
-compileStatement (Syn.Node (Syn.StmtForLoop ident initv finv body) _ _) = do
+compileStatement (Syn.Node (Syn.StmtForLoop ident initv finv body) start _) = do
+    let line = Syn.cursorLine start
     let paramVar = Syn.nodeValue ident
     typ <- gettype paramVar (Syn.nodeStart ident)
     when (typ /= TypeInt) $
         cerror (Syn.nodeStart ident) "FOR loop's parameter must be of integer type"
 
-    firstInd <- ins Exec.INop
+    firstInd <- ins line Exec.INop
 
     (initVar, initTyp) <- compileExpression initv
     when (initTyp /= TypeInt) $
@@ -376,73 +387,77 @@ compileStatement (Syn.Node (Syn.StmtForLoop ident initv finv body) _ _) = do
         cerror (Syn.nodeStart ident) "FOR loop's final value must be of integer type"
 
     -- Initial assignment
-    ins $ Exec.IMov initVar paramVar
+    ins line $ Exec.IMov initVar paramVar
 
     -- Increment step
-    incStep <- tmpvar $ Exec.ValInt 1
+    incStep <- tmpvar line $ Exec.ValInt 1
 
     -- Condition check
-    condVar <- tmpvar $ defaultOf TypeBool
-    bodyStartInd <- ins $ Exec.IGteI paramVar finVar condVar
-    jmpEndInd <- ins $ Exec.IJmpC condVar 0
+    condVar <- tmpvar line $ defaultOf TypeBool
+    bodyStartInd <- ins line $ Exec.IGteI paramVar finVar condVar
+    jmpEndInd <- ins line $ Exec.IJmpC condVar 0
 
     compileStatement body
-    ins $ Exec.IAddI paramVar incStep paramVar
-    ins $ Exec.IJmp bodyStartInd
+    ins line $ Exec.IAddI paramVar incStep paramVar
+    ins line $ Exec.IJmp bodyStartInd
 
-    endInd <- ins Exec.INop
-    setins jmpEndInd $ Exec.IJmpC condVar endInd
+    endInd <- ins line Exec.INop
+    setins jmpEndInd line $ Exec.IJmpC condVar endInd
 
     return firstInd
 
 compileStatement (Syn.Node (Syn.StmtWhileLoop cond body) start _) = do
-    startInd <- ins Exec.INop
+    let line = Syn.cursorLine start
+    startInd <- ins line Exec.INop
     (condVar, condTyp) <- compileExpression cond
     when (condTyp /= TypeBool) $
         cerror start "WHILE loops's condition must of type Bool"
 
-    notCondVar <- tmpvar $ defaultOf TypeBool
-    ins $ Exec.INot condVar notCondVar
-    jmpInd <- ins $ Exec.IJmpC notCondVar 0
+    notCondVar <- tmpvar line $ defaultOf TypeBool
+    ins line $ Exec.INot condVar notCondVar
+    jmpInd <- ins line $ Exec.IJmpC notCondVar 0
 
     compileStatement body
-    ins $ Exec.IJmp startInd
-    endInd <- ins Exec.INop
+    ins line $ Exec.IJmp startInd
+    endInd <- ins line Exec.INop
 
-    setins jmpInd $ Exec.IJmpC notCondVar endInd
+    setins jmpInd line $ Exec.IJmpC notCondVar endInd
 
     return startInd
 
-compileStatement (Syn.Node (Syn.StmtRead idents) _ _) = do
-    startInd <- ins Exec.INop
+compileStatement (Syn.Node (Syn.StmtRead idents) start _) = do
+    let line = Syn.cursorLine start
+    startInd <- ins line Exec.INop
     forM_ idents (\(Syn.Node ident istart _) -> do
         typ <- gettype ident istart
         case typ of
-            TypeInt  -> ins $ Exec.IReadI ident
-            TypeReal -> ins $ Exec.IReadF ident
-            TypeBool -> ins $ Exec.IReadB ident
+            TypeInt  -> ins line $ Exec.IReadI ident
+            TypeReal -> ins line $ Exec.IReadF ident
+            TypeBool -> ins line $ Exec.IReadB ident
         return ())
     return startInd
 
-compileStatement (Syn.Node (Syn.StmtWrite exprs) _ _) = do
-    startInd <- ins Exec.INop
+compileStatement (Syn.Node (Syn.StmtWrite exprs) start _) = do
+    let line = Syn.cursorLine start
+    startInd <- ins line Exec.INop
     forM_ exprs (\expr -> do
         (var, typ) <- compileExpression expr
         case typ of
-            TypeInt  -> ins $ Exec.IWriteI var
-            TypeReal -> ins $ Exec.IWriteF var
-            TypeBool -> ins $ Exec.IWriteB var
+            TypeInt  -> ins line $ Exec.IWriteI var
+            TypeReal -> ins line $ Exec.IWriteF var
+            TypeBool -> ins line $ Exec.IWriteB var
         return ())
     return startInd
 
 compileBlock :: Syn.NBlock -> Compiler ()
-compileBlock (Syn.Node (Syn.BlockDecl idents styp) _ _) = do
+compileBlock (Syn.Node (Syn.BlockDecl idents styp) start _) = do
+    let line = Syn.cursorLine start
     let typ = fromSynType $ Syn.nodeValue styp
     forM_ idents (\(Syn.Node ident start _) -> do
         isdef <- isdefined ident
         when isdef $
             cerror start $ "Variable " ++ show ident ++ " is already defined"
-        _ <- ins $ Exec.IDecl ident (defaultOf typ)
+        _ <- ins line $ Exec.IDecl ident (defaultOf typ)
         settype ident typ
         return ())
 compileBlock (Syn.Node (Syn.BlockStmt stmt) _ _) = do
@@ -453,7 +468,7 @@ compileProgram :: Syn.NProgram -> Compiler ()
 compileProgram (Syn.Node (Syn.Program blocks) _ _) =
     forM_ blocks compileBlock
 
-compile :: Syn.NProgram -> Either Error (Table Exec.Instruction)
+compile :: Syn.NProgram -> Either Error (Table (Int, Exec.Instruction))
 compile prg =
     case runCompiler (compileProgram prg) newState of
         Left err      -> Left err
