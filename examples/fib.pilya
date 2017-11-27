@@ -1,0 +1,18 @@
+{ This program calculates N fibonacci numbers }
+dim N %
+read(N)
+
+dim fp, f %
+fp as 0
+f as 1
+
+dim t %
+dim i %
+for i as 0 to N do [
+    write(f)
+    t as f
+    f as f + fp
+    fp as t
+]
+
+end
