@@ -1,8 +1,10 @@
 module Main where
 
 import           Control.Monad      (forM_)
+import           Data.Text          (Text)
 import qualified Data.Text.IO       as TIO
 import qualified Pilya.Compile      as Comp
+import qualified Pilya.Exec         as Exec
 import qualified Pilya.Lex          as Lex
 import qualified Pilya.Syn          as Syn
 import qualified Pilya.Table        as Tbl
@@ -53,6 +55,49 @@ asmParseAndPrint path = do
                             putStrLn $ "C:" ++ show (Syn.cursorLine cur) ++ ":" ++ show (Syn.cursorPos cur) ++ ": " ++ msg
                         Right instr ->
                             forM_ (Tbl.toEnumList instr) (\(i, (line, ins)) -> putStrLn $ show i ++ " @ " ++ show line ++ " : " ++ show ins)
+
+showLexError :: Lex.ParserError -> String
+showLexError (Lex.ParserError line pos msg) =
+    "L:" ++ show line ++ ":" ++ show pos ++ ": " ++ msg
+
+showSynError :: Syn.ParserError -> String
+showSynError (Syn.ParserError msg line pos) =
+    "S:" ++ show line ++ ":" ++ show pos ++ ": " ++ show msg
+
+showCompError :: Comp.Error -> String
+showCompError (Comp.Error cur msg) =
+    "C:" ++ show (Syn.cursorLine cur) ++ ":" ++ show (Syn.cursorPos cur) ++ ": " ++ msg
+
+mapErr :: (ea -> eb) -> Either ea a -> Either eb a
+mapErr _ (Right x) = Right x
+mapErr f (Left e)  = Left (f e)
+
+compile :: Text -> Either String (Tbl.Table Exec.Instruction)
+compile text = do
+    tokens <- mapErr showLexError $ Lex.parse text
+    ast <- mapErr showSynError $ Syn.parse tokens
+    itbl <- mapErr showCompError $ Comp.compile ast
+    return $ fmap snd itbl
+
+getInput :: [String] -> IO [String]
+getInput inp = do
+    line <- getLine
+    if line == ""
+        then return inp
+        else getInput (inp ++ [line])
+
+parseAndRun :: String -> IO ()
+parseAndRun path = do
+    text <- TIO.readFile path
+    case compile text of
+        Left err -> putStrLn err
+        Right instbl -> do
+            putStrLn "Enter program's input. Put empty line when finished."
+            inp <- getInput []
+            case Exec.run instbl inp of
+                Left (ind, err) -> putStrLn $ show ind ++ " : " ++ err
+                Right outp      -> forM_ (reverse outp) putStrLn
+
 printUsage :: IO ()
 printUsage = do
     putStrLn "Usage:"
@@ -61,7 +106,8 @@ printUsage = do
     putStrLn "Supported commands:"
     putStrLn "    lex <filepath>  - perform lexical analysis (tokenization)"
     putStrLn "    syn <filepath>  - perform syntax tree parsing"
-    putStrLn "    asm <filepath> - compile into VM instructions"
+    putStrLn "    asm <filepath>  - compile into VM instructions"
+    putStrLn "    run <filepath>  - compile and run"
 
 main :: IO ()
 main = do
@@ -70,4 +116,5 @@ main = do
         ["lex", path] -> lexParseAndPrint path
         ["syn", path] -> synParseAndPrint path
         ["asm", path] -> asmParseAndPrint path
+        ["run", path] -> parseAndRun path
         _             -> printUsage

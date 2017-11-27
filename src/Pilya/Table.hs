@@ -1,5 +1,5 @@
 module Pilya.Table
-    ( Table
+    ( Table (..)
     , empty
     , tableList
     , toList
@@ -27,6 +27,9 @@ instance Show a => Show (Table a) where
 
 instance Foldable Table where
     foldMap f tbl = foldMap f (toList tbl)
+
+instance Functor Table where
+    fmap f (Table lu s) = Table (fmap f lu) s
 
 empty :: Table a
 empty = Table M.empty 0
