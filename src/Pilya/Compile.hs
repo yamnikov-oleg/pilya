@@ -158,19 +158,19 @@ compileMultiplication (Syn.Node (Syn.Multiplication mulr oppairs) start _) = do
             (varx, typx) <- compileMultiplier mul
             case (op, typ, typx) of
                 (Syn.MultOpMult, TypeInt, TypeInt) -> do
-                    ins line $ Exec.IMulI outvar varx outvar
+                    ins line $ Exec.IMul outvar varx outvar
                     return ()
                 (Syn.MultOpMult, TypeReal, TypeReal) -> do
-                    ins line $ Exec.IMulF outvar varx outvar
+                    ins line $ Exec.IMul outvar varx outvar
                     return ()
                 (Syn.MultOpMult, _, _) ->
                     cerror opstart $ "Cannot multiply values of type " ++ show typ ++ " and " ++ show typx
 
                 (Syn.MultOpDiv, TypeInt, TypeInt) -> do
-                    ins line $ Exec.IDivI outvar varx outvar
+                    ins line $ Exec.IDiv outvar varx outvar
                     return ()
                 (Syn.MultOpDiv, TypeReal, TypeReal) -> do
-                    ins line $ Exec.IDivF outvar varx outvar
+                    ins line $ Exec.IDiv outvar varx outvar
                     return ()
                 (Syn.MultOpDiv, _, _) ->
                     cerror opstart $ "Cannot divide values of type " ++ show typ ++ " and " ++ show typx
@@ -199,19 +199,19 @@ compileSummation (Syn.Node (Syn.Summation muln oppairs) start _) = do
             (varx, typx) <- compileMultiplication mul
             case (op, typ, typx) of
                 (Syn.SumPlus, TypeInt, TypeInt) -> do
-                    ins line $ Exec.IAddI outvar varx outvar
+                    ins line $ Exec.IAdd outvar varx outvar
                     return ()
                 (Syn.SumPlus, TypeReal, TypeReal) -> do
-                    ins line $ Exec.IAddF outvar varx outvar
+                    ins line $ Exec.IAdd outvar varx outvar
                     return ()
                 (Syn.SumPlus, _, _) ->
                     cerror opstart $ "Cannot add values of type " ++ show typ ++ " and " ++ show typx
 
                 (Syn.SumMinus, TypeInt, TypeInt) -> do
-                    ins line $ Exec.ISubI outvar varx outvar
+                    ins line $ Exec.ISub outvar varx outvar
                     return ()
                 (Syn.SumMinus, TypeReal, TypeReal) -> do
-                    ins line $ Exec.ISubF outvar varx outvar
+                    ins line $ Exec.ISub outvar varx outvar
                     return ()
                 (Syn.SumMinus, _, _) ->
                     cerror opstart $ "Cannot subtract values of type " ++ show typ ++ " and " ++ show typx
@@ -231,63 +231,63 @@ compileLogOp (var1, typ1) nop (var2, typ2) = do
     outvar <- tmpvar line $ defaultOf TypeBool
     case (op, typ1, typ2) of
         (Syn.LogNeq, TypeInt, TypeInt) -> do
-            ins line $ Exec.INeqI var1 var2 outvar
+            ins line $ Exec.INeq var1 var2 outvar
             return ()
         (Syn.LogNeq, TypeReal, TypeReal) -> do
-            ins line $ Exec.INeqF var1 var2 outvar
+            ins line $ Exec.INeq var1 var2 outvar
             return ()
         (Syn.LogNeq, TypeBool, TypeBool) -> do
-            ins line $ Exec.INeqB var1 var2 outvar
+            ins line $ Exec.INeq var1 var2 outvar
             return ()
 
         (Syn.LogEq, TypeInt, TypeInt) -> do
-            ins line $ Exec.IEqI var1 var2 outvar
+            ins line $ Exec.IEq var1 var2 outvar
             return ()
         (Syn.LogEq, TypeReal, TypeReal) -> do
-            ins line $ Exec.IEqF var1 var2 outvar
+            ins line $ Exec.IEq var1 var2 outvar
             return ()
         (Syn.LogEq, TypeBool, TypeBool) -> do
-            ins line $ Exec.IEqB var1 var2 outvar
+            ins line $ Exec.IEq var1 var2 outvar
             return ()
 
         (Syn.LogLt, TypeInt, TypeInt) -> do
-            ins line $ Exec.ILtI var1 var2 outvar
+            ins line $ Exec.ILt var1 var2 outvar
             return ()
         (Syn.LogLt, TypeReal, TypeReal) -> do
-            ins line $ Exec.ILtF var1 var2 outvar
+            ins line $ Exec.ILt var1 var2 outvar
             return ()
         (Syn.LogLt, TypeBool, TypeBool) -> do
-            ins line $ Exec.ILtB var1 var2 outvar
+            ins line $ Exec.ILt var1 var2 outvar
             return ()
 
         (Syn.LogLte, TypeInt, TypeInt) -> do
-            ins line $ Exec.ILteI var1 var2 outvar
+            ins line $ Exec.ILte var1 var2 outvar
             return ()
         (Syn.LogLte, TypeReal, TypeReal) -> do
-            ins line $ Exec.ILteF var1 var2 outvar
+            ins line $ Exec.ILte var1 var2 outvar
             return ()
         (Syn.LogLte, TypeBool, TypeBool) -> do
-            ins line $ Exec.ILteB var1 var2 outvar
+            ins line $ Exec.ILte var1 var2 outvar
             return ()
 
         (Syn.LogGt, TypeInt, TypeInt) -> do
-            ins line $ Exec.IGtI var1 var2 outvar
+            ins line $ Exec.IGt var1 var2 outvar
             return ()
         (Syn.LogGt, TypeReal, TypeReal) -> do
-            ins line $ Exec.IGtF var1 var2 outvar
+            ins line $ Exec.IGt var1 var2 outvar
             return ()
         (Syn.LogGt, TypeBool, TypeBool) -> do
-            ins line $ Exec.IGtB var1 var2 outvar
+            ins line $ Exec.IGt var1 var2 outvar
             return ()
 
         (Syn.LogGte, TypeInt, TypeInt) -> do
-            ins line $ Exec.IGteI var1 var2 outvar
+            ins line $ Exec.IGte var1 var2 outvar
             return ()
         (Syn.LogGte, TypeReal, TypeReal) -> do
-            ins line $ Exec.IGteF var1 var2 outvar
+            ins line $ Exec.IGte var1 var2 outvar
             return ()
         (Syn.LogGte, TypeBool, TypeBool) -> do
-            ins line $ Exec.IGteB var1 var2 outvar
+            ins line $ Exec.IGte var1 var2 outvar
             return ()
 
         (_, _, _) ->
@@ -394,11 +394,11 @@ compileStatement (Syn.Node (Syn.StmtForLoop ident initv finv body) start _) = do
 
     -- Condition check
     condVar <- tmpvar line $ defaultOf TypeBool
-    bodyStartInd <- ins line $ Exec.IGteI paramVar finVar condVar
+    bodyStartInd <- ins line $ Exec.IGte paramVar finVar condVar
     jmpEndInd <- ins line $ Exec.IJmpC condVar 0
 
     compileStatement body
-    ins line $ Exec.IAddI paramVar incStep paramVar
+    ins line $ Exec.IAdd paramVar incStep paramVar
     ins line $ Exec.IJmp bodyStartInd
 
     endInd <- ins line Exec.INop
@@ -442,10 +442,7 @@ compileStatement (Syn.Node (Syn.StmtWrite exprs) start _) = do
     startInd <- ins line Exec.INop
     forM_ exprs (\expr -> do
         (var, typ) <- compileExpression expr
-        case typ of
-            TypeInt  -> ins line $ Exec.IWriteI var
-            TypeReal -> ins line $ Exec.IWriteF var
-            TypeBool -> ins line $ Exec.IWriteB var
+        ins line $ Exec.IWrite var
         return ())
     return startInd
 

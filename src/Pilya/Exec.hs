@@ -52,37 +52,19 @@ data Instruction
     -- Binary instructions. Operand order: src1 src2 dst
     -- Both operand type must be equal.
     -- 'I' suffix denotes integer type, 'F' - real type, 'B' - bool type.
-    | INeqI String String String
-    | IEqI String String String
-    | ILtI String String String
-    | ILteI String String String
-    | IGtI String String String
-    | IGteI String String String
+    | INeq String String String
+    | IEq String String String
+    | ILt String String String
+    | ILte String String String
+    | IGt String String String
+    | IGte String String String
 
-    | INeqF String String String
-    | IEqF String String String
-    | ILtF String String String
-    | ILteF String String String
-    | IGtF String String String
-    | IGteF String String String
-
-    | INeqB String String String
-    | IEqB String String String
-    | ILtB String String String
-    | ILteB String String String
-    | IGtB String String String
-    | IGteB String String String
-
-    | IAddI String String String
-    | ISubI String String String
-    | IAddF String String String
-    | ISubF String String String
+    | IAdd String String String
+    | ISub String String String
     | IOr String String String
 
-    | IMulI String String String
-    | IDivI String String String
-    | IMulF String String String
-    | IDivF String String String
+    | IMul String String String
+    | IDiv String String String
     | IAnd String String String
     -- Unary instruction. Operand order: src dst
     | INot String String
@@ -98,9 +80,7 @@ data Instruction
     | IReadF String
     | IReadB String
     -- Write variable value to the ouput
-    | IWriteI String
-    | IWriteF String
-    | IWriteB String
+    | IWrite String
     deriving (Show)
 
 data ExecResult
