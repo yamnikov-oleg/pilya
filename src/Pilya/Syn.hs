@@ -315,8 +315,8 @@ compound' = do
             return (stmt:stmts)
         TokNewline -> do
             newlines
-            tt <- lookahead
-            case tt of
+            tt2 <- lookahead
+            case tt2 of
                 TokBracketClose -> do
                     skip
                     return [stmt]

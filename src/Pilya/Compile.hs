@@ -77,8 +77,8 @@ ins line i = Compiler (\(State is cnt tm) ->
     Right (ind, State is2 cnt tm))
 
 setins :: Int -> Int -> Exec.Instruction -> Compiler ()
-setins ind line ins = Compiler (\(State is cnt tm) ->
-    Right ((), State (Tbl.set is ind (line, ins)) cnt tm))
+setins ind line newIns = Compiler (\(State is cnt tm) ->
+    Right ((), State (Tbl.set is ind (line, newIns)) cnt tm))
 
 tmpcnt :: Compiler Integer
 tmpcnt = Compiler (\st@(State _ cnt _) -> Right (cnt, st))
@@ -104,15 +104,15 @@ settype varname tp = Compiler (\(State is tc tm) ->
 
 tmpvar :: Int -> Exec.Value -> Compiler String
 tmpvar line val = do
-    tmpcnt <- tmpcnt
-    let varname = "$t" ++ show (tmpcnt + 1)
+    cnt <- tmpcnt
+    let varname = "$t" ++ show (cnt + 1)
     ins line $ Exec.IDecl varname val
     inctmpcnt
     settype varname (typeOf val)
     return varname
 
 compileMultiplier :: Syn.NMultiplier -> Compiler (String, Type)
-compileMultiplier (Syn.Node (Syn.MultIdent ident) start _) = do
+compileMultiplier (Syn.Node (Syn.MultIdent ident) _ _) = do
     tp <- gettype (Syn.nodeValue ident) (Syn.nodeStart ident)
     return (Syn.nodeValue ident, tp)
 compileMultiplier (Syn.Node (Syn.MultNumber num) start _) = do
@@ -441,7 +441,7 @@ compileStatement (Syn.Node (Syn.StmtWrite exprs) start _) = do
     let line = Syn.cursorLine start
     startInd <- ins line Exec.INop
     forM_ exprs (\expr -> do
-        (var, typ) <- compileExpression expr
+        (var, _) <- compileExpression expr
         ins line $ Exec.IWrite var
         return ())
     return startInd
@@ -450,10 +450,10 @@ compileBlock :: Syn.NBlock -> Compiler ()
 compileBlock (Syn.Node (Syn.BlockDecl idents styp) start _) = do
     let line = Syn.cursorLine start
     let typ = fromSynType $ Syn.nodeValue styp
-    forM_ idents (\(Syn.Node ident start _) -> do
+    forM_ idents (\(Syn.Node ident identStart _) -> do
         isdef <- isdefined ident
         when isdef $
-            cerror start $ "Variable " ++ show ident ++ " is already defined"
+            cerror identStart $ "Variable " ++ show ident ++ " is already defined"
         _ <- ins line $ Exec.IDecl ident (defaultOf typ)
         settype ident typ
         return ())

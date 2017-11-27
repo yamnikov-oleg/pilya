@@ -11,7 +11,7 @@ module Pilya.Exec
     , run
     ) where
 
-import           Control.Monad (foldM, when)
+import           Control.Monad (when)
 import qualified Data.Map      as M
 import qualified Pilya.Table   as Tbl
 import           Text.Read     (readMaybe)
