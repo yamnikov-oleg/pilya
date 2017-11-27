@@ -480,6 +480,7 @@ blocks = do
 
 program :: Parser NProgram
 program = node $ do
+    newlines
     bs <- blocks
     expect TokKwEnd
     return $ Program bs
