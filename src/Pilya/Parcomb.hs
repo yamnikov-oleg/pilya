@@ -33,7 +33,9 @@ import           Pilya.Lex   (Token (..), TokenType (..))
 {-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
 newtype ErrorMsg = ErrorMsg String
-    deriving (Show)
+
+instance Show ErrorMsg where
+    show (ErrorMsg s) = s
 
 data ParserResult a = ParserResult
     { resultValue :: Either ErrorMsg a
