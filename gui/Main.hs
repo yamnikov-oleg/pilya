@@ -13,6 +13,7 @@ import           Data.Maybe          (fromJust, isJust)
 import qualified Data.Text           as T
 import qualified GI.Gtk              as Gtk
 import qualified Pilya.Compile       as Comp
+import qualified Pilya.Exec          as Exec
 import qualified Pilya.Lex           as Lex
 import qualified Pilya.Syn           as Syn
 import qualified Pilya.Table         as Tbl
@@ -41,6 +42,9 @@ data AppUI = AppUI
     , uiAsmStore     :: Gtk.TreeStore
     , uiAsmSelection :: Gtk.TreeSelection
     , uiAsmButton    :: Gtk.Button
+    , uiRunInputEdit :: Gtk.TextView
+    , uiRunOutput    :: Gtk.TextView
+    , uiRunButton    :: Gtk.Button
     }
 
 buildListView :: [(Maybe T.Text, Gtk.GType)] -> IO (Gtk.ScrolledWindow, Gtk.TreeView, Gtk.ListStore)
@@ -257,6 +261,60 @@ buildUI = do
         ]
     #packEnd asmTabContainer asmButton False False 0
 
+    runTabContainer <- new Gtk.Box
+        [ #orientation := Gtk.OrientationVertical
+        , #margin := 6
+        , #spacing := 6
+        ]
+    runTabLabel <- new Gtk.Label
+        [ #label := "Execute"
+        ]
+    #appendPage modeTabs runTabContainer (Just runTabLabel)
+
+    runInputLabel <- new Gtk.Label
+        [ #label := "Input"
+        , #halign := Gtk.AlignStart
+        ]
+    #packStart runTabContainer runInputLabel False False 0
+
+    runInputScroll <- new Gtk.ScrolledWindow
+        []
+    #packStart runTabContainer runInputScroll True True 0
+
+    runInputEdit <- new Gtk.TextView
+        [ #monospace := True
+        , #topMargin := 12
+        , #rightMargin := 12
+        , #bottomMargin := 12
+        , #leftMargin := 12
+        ]
+    #add runInputScroll runInputEdit
+
+    runOutputScroll <- new Gtk.ScrolledWindow
+        []
+    #packStart runTabContainer runOutputScroll True True 0
+
+    runOutputLabel <- new Gtk.Label
+        [ #label := "Output"
+        , #halign := Gtk.AlignStart
+        ]
+    #packStart runTabContainer runOutputLabel False False 0
+
+    runOutputEdit <- new Gtk.TextView
+        [ #monospace := True
+        , #topMargin := 12
+        , #rightMargin := 12
+        , #bottomMargin := 12
+        , #leftMargin := 12
+        , #editable := False
+        ]
+    #add runOutputScroll runOutputEdit
+
+    runButton <- new Gtk.Button
+        [ #label := "Execute"
+        ]
+    #packEnd runTabContainer runButton False False 0
+
     return AppUI
         { uiWindow = window
         , uiSourceEdit = sourceEdit
@@ -278,6 +336,9 @@ buildUI = do
         , uiAsmStore = asmStore
         , uiAsmSelection = asmSelection
         , uiAsmButton = asmButton
+        , uiRunInputEdit = runInputEdit
+        , uiRunOutput = runOutputEdit
+        , uiRunButton = runButton
         }
 
 instance IsGValue [Char] where
@@ -568,6 +629,49 @@ treeStoreAppend store maybeParent vals = do
     #set store iter indices gvals
     return iter
 
+showLexError :: Lex.ParserError -> String
+showLexError (Lex.ParserError line pos msg) =
+    "Lexics error:\n" ++ show line ++ ":" ++ show pos ++ ": " ++ msg
+
+showSynError :: Syn.ParserError -> String
+showSynError (Syn.ParserError msg line pos) =
+    "Syntax error:\n" ++ show line ++ ":" ++ show pos ++ ": " ++ show msg
+
+showCompError :: Comp.Error -> String
+showCompError (Comp.Error cur msg) =
+    "Semantics error:\n" ++ show (Syn.cursorLine cur) ++ ":" ++ show (Syn.cursorPos cur) ++ ": " ++ msg
+
+showExecError :: (Int, String) -> String
+showExecError (ind, msg) =
+    "Execution exception:\n" ++ "instruction " ++ show ind ++ ": " ++ msg
+
+mapErr :: (e -> e') -> Either e a -> Either e' a
+mapErr _ (Right x) = Right x
+mapErr f (Left e)  = Left (f e)
+
+compileAndRun :: T.Text -> [String] -> Either String [String]
+compileAndRun text input = do
+    tokens <- mapErr showLexError $ Lex.parse text
+    ast <- mapErr showSynError $ Syn.parse tokens
+    itbl <- mapErr showCompError $ Comp.compile ast
+    mapErr showExecError $ Exec.run (fmap snd itbl) input
+
+onRunButtonClicked :: AppUI -> IO ()
+onRunButtonClicked appUI = do
+    srcBuffer <- uiSourceEdit appUI `get` #buffer
+    source <- fmap fromJust $ srcBuffer `get` #text
+
+    inputBuffer <- uiRunInputEdit appUI `get` #buffer
+    input <- fmap fromJust $ inputBuffer `get` #text
+    let inputLines = map T.unpack $ T.splitOn "\n" input
+
+    let output = case compileAndRun source inputLines of
+            Left msg          -> T.pack msg
+            Right outputLines -> T.intercalate "\n" $ map T.pack $ reverse outputLines
+
+    outputBuffer <- uiRunOutput appUI `get` #buffer
+    set outputBuffer [#text := output]
+
 main :: IO ()
 main = do
     Gtk.init Nothing
@@ -579,5 +683,6 @@ main = do
     on (uiSynSelection appUI) #changed (onSynSelectionChanged appUI)
     on (uiAsmButton appUI) #clicked (onAsmButtonClicked appUI)
     on (uiAsmSelection appUI) #changed (onAsmSelectionChanged appUI)
+    on (uiRunButton appUI) #clicked (onRunButtonClicked appUI)
     #showAll (uiWindow appUI)
     Gtk.main
