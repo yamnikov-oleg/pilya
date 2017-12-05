@@ -233,7 +233,7 @@ run' env@(Env ind _ _ _) opc tbl =
             run' newEnv (opc-1) tbl
 
 maxOpsCount :: Integer
-maxOpsCount = 1000*1000
+maxOpsCount = 100*1000
 
 run :: Tbl.Table Instruction -> [String] -> Either (Int, String) [String]
 run tbl inp = envOutput <$> run' (Env 0 M.empty inp []) maxOpsCount tbl
